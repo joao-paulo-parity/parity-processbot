@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::env;
 
 pub trait GithubIssue {
 	fn number(&self) -> i64;
@@ -866,4 +867,8 @@ pub enum Payload {
 		action: CheckRunAction,
 		check_run: CheckRun,
 	},
+}
+
+pub fn base_url() -> String {
+	env::var("GITHUB_BASE_URL").unwrap_or("https://api.github.com".to_owned())
 }

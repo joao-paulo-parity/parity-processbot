@@ -15,7 +15,6 @@ pub struct GithubBot {
 }
 
 impl GithubBot {
-	pub(crate) const BASE_URL: &'static str = "https://api.github.com";
 	pub(crate) const BASE_HTML_URL: &'static str = "https://github.com";
 
 	/// Creates a new instance of `GithubBot` from a GitHub organization defined
@@ -44,7 +43,7 @@ impl GithubBot {
 		&self,
 	) -> Result<github::InstallationRepositories> {
 		self.client
-			.get(&format!("{}/installation/repositories", Self::BASE_URL))
+			.get(&format!("{}/installation/repositories", github::base_url()))
 			.await
 	}
 
@@ -57,7 +56,7 @@ impl GithubBot {
 	) -> Result<github::CombinedStatus> {
 		let url = format!(
 			"{base_url}/repos/{owner}/{repo}/commits/{sha}/status",
-			base_url = Self::BASE_URL,
+			base_url = github::base_url(),
 			owner = owner,
 			repo = repo_name,
 			sha = sha
@@ -74,7 +73,7 @@ impl GithubBot {
 	) -> Result<github::CheckRuns> {
 		let url = format!(
 			"{base_url}/repos/{owner}/{repo}/commits/{sha}/check-runs",
-			base_url = Self::BASE_URL,
+			base_url = github::base_url(),
 			owner = owner,
 			repo = repo_name,
 			sha = sha
@@ -92,7 +91,7 @@ impl GithubBot {
 	) -> Result<github::Contents> {
 		let url = &format!(
 			"{base_url}/repos/{owner}/{repo_name}/contents/{path}?ref={ref_field}",
-			base_url = Self::BASE_URL,
+			base_url = github::base_url(),
 			owner = owner,
 			repo_name = repo_name,
 			path = path,
@@ -123,7 +122,7 @@ impl GithubBot {
 	pub async fn org_member(&self, org: &str, username: &str) -> Result<bool> {
 		let url = &format!(
 			"{base_url}/orgs/{org}/members/{username}",
-			base_url = Self::BASE_URL,
+			base_url = github::base_url(),
 			org = org,
 			username = username,
 		);

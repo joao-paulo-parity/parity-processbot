@@ -17,7 +17,7 @@ impl GithubBot {
 		self.client
 			.get(format!(
 				"{base_url}/repos/{owner}/{repo}/issues/{number}",
-				base_url = Self::BASE_URL,
+				base_url = github::base_url(),
 				owner = owner,
 				repo = repo.name,
 				number = number
@@ -50,7 +50,7 @@ impl GithubBot {
 				.map(|num| {
 					self.client.get(format!(
 						"{base_url}/repos/{owner}/{repo}/issues/{issue_number}",
-						base_url = Self::BASE_URL,
+						base_url = github::base_url(),
 						owner = owner,
 						repo = &repo_name,
 						issue_number = num
@@ -73,7 +73,7 @@ impl GithubBot {
 		self.client
 			.get_all(format!(
 				"{base_url}/repos/{owner}/{repo_name}/issues/{issue_number}/events",
-				base_url = Self::BASE_URL,
+				base_url = github::base_url(),
 				owner = owner,
 				repo_name = repo_name,
 				issue_number = issue_number
@@ -115,7 +115,7 @@ impl GithubBot {
 	) -> Result<github::Issue> {
 		let url = format!(
 			"{base_url}/repos/{owner}/{repo}/issues",
-			base_url = Self::BASE_URL,
+			base_url = github::base_url(),
 			owner = owner,
 			repo = repo_name,
 		);
@@ -141,7 +141,7 @@ impl GithubBot {
 	) -> Result<Vec<github::Comment>> {
 		let url = format!(
 			"{base}/repos/{owner}/{repo}/issues/{issue_number}/comments",
-			base = Self::BASE_URL,
+			base = github::base_url(),
 			owner = owner,
 			repo = repo_name,
 			issue_number = issue_number
@@ -159,7 +159,7 @@ impl GithubBot {
 	) -> Result<()> {
 		let url = format!(
 			"{base}/repos/{owner}/{repo}/issues/{issue_number}/comments",
-			base = Self::BASE_URL,
+			base = github::base_url(),
 			owner = owner,
 			repo = repo_name,
 			issue_number = issue_number
@@ -183,7 +183,7 @@ impl GithubBot {
 	{
 		let url = format!(
 			"{base_url}/repos/{owner}/{repo}/issues/{issue_number}/assignees",
-			base_url = Self::BASE_URL,
+			base_url = github::base_url(),
 			owner = owner,
 			repo = repo_name.as_ref(),
 			issue_number = issue_number
@@ -208,7 +208,7 @@ impl GithubBot {
 	{
 		let url = format!(
 			"{base_url}/repos/{owner}/{repo}/issues/{issue_number}",
-			base_url = Self::BASE_URL,
+			base_url = github::base_url(),
 			owner = owner,
 			repo = repo_name.as_ref(),
 			issue_number = issue_number
