@@ -25,12 +25,20 @@ impl GithubBot {
 	pub async fn new(
 		private_key: impl Into<Vec<u8>>,
 		installation_login: &str,
-		fetch_url: Option<String>,
 	) -> Result<Self> {
 		let client = crate::http::Client::new(
 			private_key.into(),
 			installation_login.to_owned(),
 		);
+
+		Ok(Self {
+			client,
+			fetch_url: None,
+		})
+	}
+
+	pub async fn new_for_testing(fetch_url: Option<String>) -> Result<Self> {
+		let client = crate::http::Client::new(vec![], "".to_string());
 
 		Ok(Self { client, fetch_url })
 	}

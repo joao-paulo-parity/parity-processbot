@@ -40,7 +40,6 @@ async fn run() -> anyhow::Result<()> {
 	let github_bot = github_bot::GithubBot::new(
 		config.private_key.clone(),
 		&config.installation_login,
-		None,
 	)
 	.await?;
 

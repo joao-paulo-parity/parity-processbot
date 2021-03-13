@@ -1,49 +1,52 @@
-use httptest::{mappers::*, responders::*, Expectation, Server};
-use serde_json::json;
+use httptest::{matchers::*, responders::*, Expectation, Server};
+use parity_processbot::github;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 
 #[tokio::test]
 async fn case1() {
 	env_logger::init();
+
 	let github_api = Server::run();
-	let mut request_count: usize = 0;
-	server.expect(
-		Expectation::matching(request::method_path("GET", "/foo"))
-			.respond_with(|| {
-				request_count += 1;
-				if request_count == 1 {
-					status_code(405)()
-				} else {
-					status_code(201)()
-				}
-			}),
+	github::BASE_URL
+		.set(Some(github_api.url("").to_string()))
+		.unwrap();
+
+	let substrate_merge_path = format!(
+		"/{}/repos/{}/{}/pulls/{}/merge",
+		github::base_url(),
+		"_",
+		"substrate",
+		1
+	);
+	let companion_merge_path = format!(
+		"/{}/repos/{}/{}/pulls/{}/merge",
+		github::base_url(),
+		"_",
+		"polkadot",
+		1
 	);
 
-	// The server provides server.addr() that returns the address of the
-	// locally running server, or more conveniently provides a server.url()
-	// method that gives a fully formed http url to the provided path.
-	let url = server.url("/foo");
+	github_api.expect(
+		Expectation::matching(request::method_path(
+			"PUT",
+			substrate_merge_path,
+		))
+		.respond_with(status_code(200)),
+	);
 
-	// Now test your http client against the server.
-	let client = hyper::Client::new();
-	// Issue the GET /foo to the server.
-	let resp = client.get(url).await.unwrap();
-	// Optionally use response matchers to assert the server responded as
-	// expected.
-
-	// Assert the response was a 200.
-	assert_eq!(200, resp.status().as_u16());
-
-	// Issue a POST /bar with {'foo': 'bar'} json body.
-	let post_req = http::Request::post(server.url("/bar"))
-		.body(json!({"foo": "bar"}).to_string().into())
-		.unwrap();
-	// Read the entire response body into a Vec<u8> to allow using the body
-	// response matcher.
-	let resp = read_response_body(client.request(post_req)).await;
-	// Assert the response was a 200 with a json body of {'result': 'success'}
-	assert_eq!(200, resp.status().as_u16());
-	assert_eq!(
-		json!({"result": "success"}),
-		serde_json::from_slice::<serde_json::Value>(resp.body()).unwrap()
+	let companion_merge_tries = Arc::new(AtomicUsize::new(0));
+	github_api.expect(
+		Expectation::matching(request::method_path(
+			"PUT",
+			companion_merge_path,
+		))
+		.respond_with(move || {
+			if companion_merge_tries.fetch_add(1, Ordering::SeqCst) == 1 {
+				status_code(405)
+			} else {
+				status_code(200)
+			}
+		}),
 	);
 }

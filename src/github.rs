@@ -1,5 +1,6 @@
+use once_cell::sync::OnceCell;
+use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
-use std::env;
 
 pub trait GithubIssue {
 	fn number(&self) -> i64;
@@ -869,6 +870,12 @@ pub enum Payload {
 	},
 }
 
+pub static BASE_URL: OnceCell<Option<String>> = OnceCell::new();
+const DEFAULT_BASE_URL: &'static str = "https://api.github.com";
+
 pub fn base_url() -> String {
-	env::var("GITHUB_BASE_URL").unwrap_or("https://api.github.com".to_owned())
+	BASE_URL
+		.get()
+		.map(|o| o.to_owned().unwrap_or(DEFAULT_BASE_URL.to_string()))
+		.unwrap_or(DEFAULT_BASE_URL.to_string())
 }
