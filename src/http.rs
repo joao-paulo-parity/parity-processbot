@@ -140,7 +140,7 @@ impl Client {
 		let installations: Vec<github::Installation> = self
 			.jwt_get(&format!(
 				"{}/app/installations",
-				crate::github_bot::GithubBot::BASE_URL
+				crate::github::base_api_url()
 			))
 			.await?;
 
@@ -153,7 +153,7 @@ impl Client {
 			.jwt_post(
 				&format!(
 					"{}/app/installations/{}/access_tokens",
-					crate::github_bot::GithubBot::BASE_URL,
+					crate::github::base_api_url(),
 					installation.id
 				),
 				&serde_json::json!({}),
@@ -225,7 +225,7 @@ impl Client {
 			&jsonwebtoken::Header::new(jsonwebtoken::Algorithm::RS256),
 			&body,
 			&jsonwebtoken::EncodingKey::from_rsa_pem(&self.private_key)
-				.expect("private key should be RSA pem"),
+				.unwrap(),
 		)
 		.context(error::Jwt)
 	}

@@ -13,8 +13,9 @@ use tokio::sync::Mutex;
 
 use crate::{
 	auth::GithubUserAuthenticator, companion::*, config::BotConfig,
-	constants::*, error::*, github::*, github_bot::GithubBot, gitlab_bot::*,
-	matrix_bot::MatrixBot, performance, process, rebase::*, Result, Status,
+	config::MainConfig, constants::*, error::*, github::*,
+	github_bot::GithubBot, gitlab_bot::*, matrix_bot::MatrixBot, performance,
+	process, rebase::*, Result, Status,
 };
 
 /// This data gets passed along with each webhook to the webhook handler.
@@ -25,7 +26,7 @@ pub struct AppState {
 	pub gitlab_bot: GitlabBot,
 
 	pub bot_config: BotConfig,
-	pub webhook_secret: String,
+	pub config: MainConfig,
 }
 
 /// This stores information about a pull request while we wait for checks to complete.
@@ -122,7 +123,7 @@ pub async fn webhook_inner(
 	})?;
 
 	verify(
-		state.webhook_secret.trim().as_bytes(),
+		state.config.webhook_secret.trim().as_bytes(),
 		&msg_bytes,
 		&sig_bytes,
 	)
@@ -175,7 +176,7 @@ Payload:
 }
 
 /// Match different kinds of payload.
-async fn handle_payload(payload: Payload, state: &AppState) -> Result<()> {
+pub async fn handle_payload(payload: Payload, state: &AppState) -> Result<()> {
 	match payload {
 		Payload::IssueComment {
 			action: IssueCommentAction::Created,

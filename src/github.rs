@@ -1,4 +1,5 @@
 use crate::{constants::BOT_COMMANDS, error::*, Result, PR_HTML_URL_REGEX};
+use once_cell::sync::OnceCell;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use snafu::OptionExt;
@@ -70,9 +71,10 @@ pub struct Issue {
 	pub html_url: String,
 	// User might be missing when it has been deleted
 	pub user: Option<User>,
+	// Repository might be missing when it has been deleted
+	pub repository: Option<Repository>,
 	pub body: Option<String>,
 	pub pull_request: Option<IssuePullRequest>,
-	pub repository: Option<Repository>,
 	pub repository_url: Option<String>,
 }
 
@@ -101,7 +103,7 @@ impl HasIssueDetails for Issue {
 					..
 				}) = &repository
 				{
-					parse_repository_full_name(full_name)
+					parse_repository_full_name(full_name.as_str())
 						.map(|(owner, name)| (owner, name, *number))
 				} else {
 					None
@@ -489,4 +491,14 @@ pub fn parse_repository_full_name(full_name: &str) -> Option<(String, String)> {
 		})
 		.flatten()
 		.flatten()
+}
+
+pub static BASE_API_URL: OnceCell<String> = OnceCell::new();
+const DEFAULT_BASE_API_URL: &str = "https://api.github.com";
+
+pub fn base_api_url() -> String {
+	BASE_API_URL
+		.get()
+		.map(|o| o.to_owned())
+		.unwrap_or(DEFAULT_BASE_API_URL.to_string())
 }

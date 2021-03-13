@@ -17,7 +17,6 @@ pub struct GithubBot {
 }
 
 impl GithubBot {
-	pub(crate) const BASE_URL: &'static str = "https://api.github.com";
 	pub(crate) const BASE_HTML_URL: &'static str = "https://github.com";
 
 	/// Creates a new instance of `GithubBot` from a GitHub organization defined
@@ -41,6 +40,19 @@ impl GithubBot {
 		})
 	}
 
+	pub async fn new_for_testing(
+		private_key: Vec<u8>,
+		fetch_domain: String,
+		fetch_prefix: String,
+	) -> Result<Self> {
+		let client = crate::http::Client::new(private_key, "".to_string());
+		Ok(Self {
+			client,
+			fetch_domain: Some(fetch_domain),
+			fetch_prefix: Some(fetch_prefix),
+		})
+	}
+
 	pub fn owner_from_html_url(url: &str) -> Option<&str> {
 		url.split("/").skip(3).next()
 	}
@@ -49,7 +61,7 @@ impl GithubBot {
 		&self,
 	) -> Result<InstallationRepositories> {
 		self.client
-			.get(&format!("{}/installation/repositories", Self::BASE_URL))
+			.get(&format!("{}/installation/repositories", base_api_url()))
 			.await
 	}
 
@@ -62,7 +74,7 @@ impl GithubBot {
 	) -> Result<CombinedStatus> {
 		let url = format!(
 			"{base_url}/repos/{owner}/{repo}/commits/{sha}/status",
-			base_url = Self::BASE_URL,
+			base_url = base_api_url(),
 			owner = owner,
 			repo = repo_name,
 			sha = sha
@@ -88,7 +100,7 @@ impl GithubBot {
 	) -> Result<CheckRuns> {
 		let url = format!(
 			"{base_url}/repos/{owner}/{repo}/commits/{sha}/check-runs",
-			base_url = Self::BASE_URL,
+			base_url = base_api_url(),
 			owner = owner,
 			repo = repo_name,
 			sha = sha
@@ -106,7 +118,7 @@ impl GithubBot {
 	) -> Result<Contents> {
 		let url = &format!(
 			"{base_url}/repos/{owner}/{repo_name}/contents/{path}?ref={ref_field}",
-			base_url = Self::BASE_URL,
+			base_url = base_api_url(),
 			owner = owner,
 			repo_name = repo_name,
 			path = path,
@@ -137,7 +149,7 @@ impl GithubBot {
 	pub async fn org_member(&self, org: &str, username: &str) -> Result<bool> {
 		let url = &format!(
 			"{base_url}/orgs/{org}/members/{username}",
-			base_url = Self::BASE_URL,
+			base_url = base_api_url(),
 			org = org,
 			username = username,
 		);
@@ -153,7 +165,7 @@ impl GithubBot {
 	) -> Result<Review> {
 		let url = &format!(
 			"{}/repos/{}/{}/pulls/{}/reviews",
-			Self::BASE_URL,
+			base_api_url(),
 			owner,
 			repo_name,
 			pr_number
@@ -171,7 +183,7 @@ impl GithubBot {
 	) -> Result<Review> {
 		let url = &format!(
 			"{}/repos/{}/{}/pulls/{}/reviews/{}/dismissals",
-			Self::BASE_URL,
+			base_api_url(),
 			owner,
 			repo_name,
 			pr_number,

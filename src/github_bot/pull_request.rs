@@ -24,7 +24,7 @@ impl GithubBot {
 		self.client
 			.get(format!(
 				"{base_url}/repos/{owner}/{repo}/pulls/{pull_number}",
-				base_url = Self::BASE_URL,
+				base_url = github::base_api_url(),
 				owner = owner,
 				repo = repo_name,
 				pull_number = pull_number
@@ -41,7 +41,7 @@ impl GithubBot {
 		self.client
 			.get_all(format!(
 				"{base_url}/repos/{owner}/{repo}/pulls?head={head}",
-				base_url = Self::BASE_URL,
+				base_url = github::base_api_url(),
 				owner = owner,
 				repo = repo_name,
 				head = head,
@@ -65,7 +65,7 @@ impl GithubBot {
 	{
 		let url = format!(
 			"{base_url}/repos/{owner}/{repo}/pulls",
-			base_url = Self::BASE_URL,
+			base_url = github::base_api_url(),
 			owner = owner,
 			repo = repo_name.as_ref(),
 		);
@@ -90,10 +90,10 @@ impl GithubBot {
 		repo_name: &str,
 		number: i64,
 		head_sha: &str,
-	) -> Result<()> {
+	) -> Result<reqwest::Response> {
 		let url = format!(
 			"{base_url}/repos/{owner}/{repo}/pulls/{number}/merge",
-			base_url = Self::BASE_URL,
+			base_url = github::base_api_url(),
 			owner = owner,
 			repo = repo_name,
 			number = number,
@@ -102,7 +102,7 @@ impl GithubBot {
 			"sha": head_sha,
 			"merge_method": "squash"
 		});
-		self.client.put_response(&url, &params).await.map(|_| ())
+		self.client.put_response(&url, &params).await
 	}
 
 	/// Closes a pull request.
@@ -117,7 +117,7 @@ impl GithubBot {
 	{
 		let url = format!(
 			"{base_url}/repos/{owner}/{repo}/pulls/{pull_number}",
-			base_url = Self::BASE_URL,
+			base_url = github::base_api_url(),
 			owner = owner,
 			repo = repo_name.as_ref(),
 			pull_number = pull_number
