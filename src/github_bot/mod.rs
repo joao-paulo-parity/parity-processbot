@@ -37,10 +37,10 @@ impl GithubBot {
 		})
 	}
 
-	pub async fn new_for_testing(fetch_url: Option<String>) -> Result<Self> {
+	pub fn new_for_testing(fetch_url: Option<String>) -> Self {
 		let client = crate::http::Client::new(vec![], "".to_string());
 
-		Ok(Self { client, fetch_url })
+		Self { client, fetch_url }
 	}
 
 	pub fn owner_from_html_url(url: &str) -> Option<&str> {

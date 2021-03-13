@@ -6,9 +6,11 @@ use crate::{
 use rocksdb::DB;
 
 pub async fn setup(
-	main_config: Option<MainConfig>,
+	conf: Option<MainConfig>,
+	gh_bot: Option<github_bot::GithubBot>,
 ) -> anyhow::Result<AppState> {
-	let config = main_config.unwrap_or_else(|| MainConfig::from_env());
+	let config = conf.unwrap_or_else(|| MainConfig::from_env());
+
 	env_logger::from_env(env_logger::Env::default().default_filter_or("info"))
 		.init();
 
@@ -26,11 +28,15 @@ pub async fn setup(
 	)?;
 
 	log::info!("Connecting to Github account {}", config.installation_login);
-	let github_bot = github_bot::GithubBot::new(
-		config.private_key.clone(),
-		&config.installation_login,
-	)
-	.await?;
+	let github_bot = if let Some(github_bot) = gh_bot {
+		github_bot
+	} else {
+		github_bot::GithubBot::new(
+			config.private_key.clone(),
+			&config.installation_login,
+		)
+		.await?
+	};
 
 	log::info!("Connecting to Gitlab https://{}", config.gitlab_hostname);
 	let gitlab_bot = gitlab_bot::GitlabBot::new_with_token(

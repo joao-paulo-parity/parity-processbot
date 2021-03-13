@@ -14,7 +14,7 @@ async fn main() -> std::io::Result<()> {
 }
 
 async fn run() -> anyhow::Result<()> {
-	let state = setup(None).await?;
+	let state = setup(None, None).await?;
 	let socket = SocketAddr::new(
 		IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
 		state
