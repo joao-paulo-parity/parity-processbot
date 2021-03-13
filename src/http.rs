@@ -139,7 +139,7 @@ impl Client {
 		let installations: Vec<github::Installation> = self
 			.jwt_get(&format!(
 				"{}/app/installations",
-				crate::github::base_url()
+				crate::github::base_api_url()
 			))
 			.await?;
 
@@ -152,7 +152,7 @@ impl Client {
 			.jwt_post(
 				&format!(
 					"{}/app/installations/{}/access_tokens",
-					crate::github::base_url(),
+					crate::github::base_api_url(),
 					installation.id
 				),
 				&serde_json::json!({}),

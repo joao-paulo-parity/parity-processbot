@@ -51,7 +51,10 @@ impl GithubBot {
 		&self,
 	) -> Result<github::InstallationRepositories> {
 		self.client
-			.get(&format!("{}/installation/repositories", github::base_url()))
+			.get(&format!(
+				"{}/installation/repositories",
+				github::base_api_url()
+			))
 			.await
 	}
 
@@ -64,7 +67,7 @@ impl GithubBot {
 	) -> Result<github::CombinedStatus> {
 		let url = format!(
 			"{base_url}/repos/{owner}/{repo}/commits/{sha}/status",
-			base_url = github::base_url(),
+			base_url = github::base_api_url(),
 			owner = owner,
 			repo = repo_name,
 			sha = sha
@@ -81,7 +84,7 @@ impl GithubBot {
 	) -> Result<github::CheckRuns> {
 		let url = format!(
 			"{base_url}/repos/{owner}/{repo}/commits/{sha}/check-runs",
-			base_url = github::base_url(),
+			base_url = github::base_api_url(),
 			owner = owner,
 			repo = repo_name,
 			sha = sha
@@ -99,7 +102,7 @@ impl GithubBot {
 	) -> Result<github::Contents> {
 		let url = &format!(
 			"{base_url}/repos/{owner}/{repo_name}/contents/{path}?ref={ref_field}",
-			base_url = github::base_url(),
+			base_url = github::base_api_url(),
 			owner = owner,
 			repo_name = repo_name,
 			path = path,
@@ -130,7 +133,7 @@ impl GithubBot {
 	pub async fn org_member(&self, org: &str, username: &str) -> Result<bool> {
 		let url = &format!(
 			"{base_url}/orgs/{org}/members/{username}",
-			base_url = github::base_url(),
+			base_url = github::base_api_url(),
 			org = org,
 			username = username,
 		);

@@ -786,12 +786,12 @@ pub enum Payload {
 	},
 }
 
-pub static BASE_URL: OnceCell<Option<String>> = OnceCell::new();
-const DEFAULT_BASE_URL: &'static str = "https://api.github.com";
+pub static BASE_API_URL: OnceCell<String> = OnceCell::new();
+const DEFAULT_BASE_API_URL: &'static str = "https://api.github.com";
 
-pub fn base_url() -> String {
-	BASE_URL
+pub fn base_api_url() -> String {
+	BASE_API_URL
 		.get()
-		.map(|o| o.to_owned().unwrap_or(DEFAULT_BASE_URL.to_string()))
-		.unwrap_or(DEFAULT_BASE_URL.to_string())
+		.map(|o| o.to_owned())
+		.unwrap_or(DEFAULT_BASE_API_URL.to_string())
 }

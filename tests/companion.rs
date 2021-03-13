@@ -9,21 +9,30 @@ use std::sync::Arc;
 async fn case1() {
 	env_logger::init();
 
+	let placeholder_string = "".to_string();
+	let placeholder_user = github::User {
+		login: "foo".to_string(),
+	};
+
 	let github_api = Server::run();
-	github::BASE_URL
-		.set(Some(github_api.url("").to_string()))
+	github::BASE_API_URL
+		.set(github_api.url("").to_string())
 		.unwrap();
 
-	let substrate_merge_path = format!(
+	let substrate_pr_number = 1;
+	let substrate_repository_url = "https://github.com/_/substrate";
+	let substrate_pr_url =
+		format!("{}/pull/{}", substrate_repository_url, substrate_pr_number);
+	let substrate_api_merge_path = format!(
 		"/{}/repos/{}/{}/pulls/{}/merge",
-		github::base_url(),
+		github::base_api_url(),
 		"_",
 		"substrate",
 		1
 	);
-	let companion_merge_path = format!(
+	let companion_api_merge_path = format!(
 		"/{}/repos/{}/{}/pulls/{}/merge",
-		github::base_url(),
+		github::base_api_url(),
 		"_",
 		"polkadot",
 		1
@@ -32,7 +41,7 @@ async fn case1() {
 	github_api.expect(
 		Expectation::matching(request::method_path(
 			"PUT",
-			substrate_merge_path,
+			substrate_api_merge_path,
 		))
 		.respond_with(status_code(200)),
 	);
@@ -41,7 +50,7 @@ async fn case1() {
 	github_api.expect(
 		Expectation::matching(request::method_path(
 			"PUT",
-			companion_merge_path,
+			companion_api_merge_path,
 		))
 		.respond_with(move || {
 			if companion_merge_tries.fetch_add(1, Ordering::SeqCst) == 1 {
@@ -52,48 +61,42 @@ async fn case1() {
 		}),
 	);
 
-	let irrelevant_string = "".to_string();
-
 	let state = setup(Some(MainConfig {
-		environment: irrelevant_string.clone(),
-		test_repo: irrelevant_string.clone(),
-		installation_login: irrelevant_string.clone(),
-		webhook_secret: irrelevant_string.clone(),
-		webhook_port: irrelevant_string.clone(),
-		db_path: irrelevant_string.clone(),
-		bamboo_token: irrelevant_string.clone(),
+		environment: placeholder_string.clone(),
+		test_repo: placeholder_string.clone(),
+		installation_login: placeholder_string.clone(),
+		webhook_secret: placeholder_string.clone(),
+		webhook_port: placeholder_string.clone(),
+		db_path: placeholder_string.clone(),
+		bamboo_token: placeholder_string.clone(),
 		private_key: vec![],
-		matrix_homeserver: irrelevant_string.clone(),
-		matrix_access_token: irrelevant_string.clone(),
-		matrix_default_channel_id: irrelevant_string.clone(),
+		matrix_homeserver: placeholder_string.clone(),
+		matrix_access_token: placeholder_string.clone(),
+		matrix_default_channel_id: placeholder_string.clone(),
 		main_tick_secs: 0,
 		bamboo_tick_secs: 0,
 		matrix_silent: true,
-		gitlab_hostname: irrelevant_string.clone(),
-		gitlab_project: irrelevant_string.clone(),
-		gitlab_job_name: irrelevant_string.clone(),
-		gitlab_private_token: irrelevant_string.clone(),
+		gitlab_hostname: placeholder_string.clone(),
+		gitlab_project: placeholder_string.clone(),
+		gitlab_job_name: placeholder_string.clone(),
+		gitlab_private_token: placeholder_string.clone(),
 	}))
 	.await
 	.unwrap();
-
-	let irrelevant_user = github::User {
-		login: irrelevant_string.clone(),
-	};
 
 	handle_payload(
 		github::Payload::IssueComment {
 			action: github::IssueCommentAction::Created,
 			comment: github::Comment {
 				body: "bot merge".to_string(),
-				user: irrelevant_user.clone(),
+				user: placeholder_user.clone(),
 			},
 			issue: github::Issue {
 				id: 1,
-				number: 1,
-				body: Some(irrelevant_string.clone()),
-				html_url: irrelevant_string.clone(),
-				repository_url: Some(irrelevant_string.clone()),
+				number: substrate_pr_number,
+				body: Some(placeholder_string.clone()),
+				html_url: substrate_pr_url,
+				repository_url: Some(substrate_repository_url.to_string()),
 				pull_request: Some(github::IssuePullRequest {}),
 			},
 		},
