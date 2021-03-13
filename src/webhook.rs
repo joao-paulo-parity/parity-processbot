@@ -270,8 +270,10 @@ async fn checks_and_status(
 							})?;
 
 						// update companion if necessary
-						update_companion(github_bot, &repo_name, &pr, db)
-							.await?;
+						update_companion(
+							github_bot, &repo_name, &pr, &html_url,
+						)
+						.await?;
 					}
 					CombinedStatus {
 						state: StatusState::Failure,
@@ -431,7 +433,7 @@ async fn handle_comment(
 			.await?;
 
 			merge(github_bot, owner, &repo_name, &pr).await?;
-			update_companion(github_bot, &repo_name, &pr, db).await?;
+			update_companion(github_bot, &repo_name, &pr, &html_url).await?;
 		} else {
 			wait_to_merge(
 				github_bot,
@@ -484,7 +486,7 @@ async fn handle_comment(
 		)
 		.await?;
 		merge(github_bot, owner, &repo_name, &pr).await?;
-		update_companion(github_bot, &repo_name, &pr, db).await?;
+		update_companion(github_bot, &repo_name, &pr, &html_url).await?;
 	} else if body.to_lowercase().trim()
 		== AUTO_MERGE_CANCEL.to_lowercase().trim()
 	{
@@ -1200,7 +1202,7 @@ async fn update_companion(
 	github_bot: &GithubBot,
 	repo_name: &str,
 	pr: &PullRequest,
-	db: &DB,
+	merged_url: &str,
 ) -> Result<()> {
 	if repo_name == "substrate" {
 		log::info!("Checking for companion.");
@@ -1222,9 +1224,12 @@ async fn update_companion(
 					})?;
 
 				if let PullRequest {
+					number,
+					user: User {
+						login: pr_author, ..
+					},
 					head:
 						Head {
-							ref_field: comp_head_branch,
 							repo:
 								HeadRepo {
 									name: comp_head_repo,
@@ -1240,58 +1245,25 @@ async fn update_companion(
 					..
 				} = comp_pr.clone()
 				{
-					log::info!("Updating companion {}", comp_html_url);
-					if let Some(updated_sha) = companion_update(
-						github_bot,
-						&comp_owner,
-						&comp_repo,
-						&comp_head_owner,
-						&comp_head_repo,
-						&comp_head_branch,
-					)
-					.await
-					.map_err(|e| {
-						Error::Companion {
-							source: Box::new(e),
-						}
-						.map_issue(Some((
-							comp_owner.to_string(),
-							comp_repo.to_string(),
-							comp_number,
-						)))
-					})? {
-						log::info!(
-							"Companion updated; waiting for checks on {}",
-							comp_html_url
-						);
-
-						// wait for checks on the update commit
-						wait_to_merge(
-							github_bot,
-							&comp_owner,
-							&comp_repo,
-							comp_pr.number,
-							&comp_pr.html_url,
-							&format!("parity-processbot[bot]"),
-							&updated_sha,
-							db,
+					let (first_repo_name_char, repo_name_rest) =
+						repo_name.split_at(1);
+					let _ = github_bot
+						.create_issue_comment(
+							&comp_head_owner,
+							&comp_head_repo,
+							number,
+							&format!(
+								"@{}, {} has been merged on {}.",
+								pr_author,
+								merged_url,
+								first_repo_name_char.to_uppercase()
+									+ repo_name_rest
+							),
 						)
-						.await?;
-					} else {
-						log::info!(
-							"Failed updating companion {}",
-							comp_html_url
-						);
-
-						Err(Error::Message {
-							msg: format!("Failed updating substrate."),
-						}
-						.map_issue(Some((
-							comp_owner.to_string(),
-							comp_repo.to_string(),
-							comp_number,
-						))))?;
-					}
+						.await
+						.map_err(|e| {
+							log::error!("Error posting comment: {}", e);
+						});
 				} else {
 					Err(Error::Companion {
 						source: Box::new(Error::Message {
