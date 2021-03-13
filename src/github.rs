@@ -1,20 +1,11 @@
 use once_cell::sync::OnceCell;
-use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 
 pub trait GithubIssue {
 	fn number(&self) -> i64;
 	fn id(&self) -> i64;
 	fn html_url(&self) -> &String;
-	fn user(&self) -> &User;
 	fn body(&self) -> Option<&String>;
-	fn title(&self) -> Option<&String>;
-	fn repository(&self) -> Option<&Repository>;
-	fn assignee(&self) -> Option<&User>;
-	fn is_assignee(&self, login: &str) -> bool {
-		self.assignee()
-			.map_or(false, |assignee| assignee.login == login)
-	}
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -74,24 +65,8 @@ impl GithubIssue for PullRequest {
 		&self.html_url
 	}
 
-	fn user(&self) -> &User {
-		&self.user
-	}
-
 	fn body(&self) -> Option<&String> {
 		self.body.as_ref()
-	}
-
-	fn title(&self) -> Option<&String> {
-		self.title.as_ref()
-	}
-
-	fn repository(&self) -> Option<&Repository> {
-		self.repository.as_ref()
-	}
-
-	fn assignee(&self) -> Option<&User> {
-		self.assignee.as_ref()
 	}
 }
 
@@ -99,23 +74,9 @@ impl GithubIssue for PullRequest {
 pub struct Issue {
 	pub number: i64,
 	pub id: i64,
-	pub node_id: Option<String>,
 	pub html_url: String,
-	pub user: User,
 	pub body: Option<String>,
-	pub title: Option<String>,
-	pub state: Option<String>,
-	pub labels: Vec<Label>,
-	pub assignee: Option<User>,
-	pub assignees: Vec<User>,
-	pub milestone: Option<Milestone>,
-	pub locked: Option<bool>,
-	pub active_lock_reason: Option<String>,
 	pub pull_request: Option<IssuePullRequest>,
-	pub created_at: String,
-	pub updated_at: String,
-	pub closed_at: Option<String>,
-	pub repository: Option<Repository>,
 	pub repository_url: Option<String>,
 }
 
@@ -132,24 +93,8 @@ impl GithubIssue for Issue {
 		&self.html_url
 	}
 
-	fn user(&self) -> &User {
-		&self.user
-	}
-
 	fn body(&self) -> Option<&String> {
 		self.body.as_ref()
-	}
-
-	fn title(&self) -> Option<&String> {
-		self.title.as_ref()
-	}
-
-	fn repository(&self) -> Option<&Repository> {
-		self.repository.as_ref()
-	}
-
-	fn assignee(&self) -> Option<&User> {
-		self.assignee.as_ref()
 	}
 }
 
@@ -274,14 +219,8 @@ pub struct IssueEvent {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Comment {
-	pub id: i64,
 	pub body: String,
 	pub user: User,
-	pub node_id: Option<String>,
-	pub url: Option<String>,
-	pub html_url: Option<String>,
-	pub created_at: chrono::DateTime<chrono::Utc>,
-	pub updated_at: chrono::DateTime<chrono::Utc>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -358,12 +297,7 @@ pub struct Plan {
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct IssuePullRequest {
-	pub url: Option<String>,
-	pub html_url: Option<String>,
-	pub diff_url: Option<String>,
-	pub patch_url: Option<String>,
-}
+pub struct IssuePullRequest {}
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Head {
@@ -406,24 +340,6 @@ pub struct RequestedReviewers {
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct User {
 	pub login: String,
-	pub id: Option<i64>,
-	pub node_id: Option<String>,
-	pub avatar_url: String,
-	pub gravatar_id: String,
-	pub url: Option<String>,
-	pub html_url: Option<String>,
-	pub followers_url: String,
-	pub following_url: String,
-	pub gists_url: String,
-	pub starred_url: String,
-	pub subscriptions_url: String,
-	pub organizations_url: String,
-	pub repos_url: String,
-	pub events_url: String,
-	pub received_events_url: String,
-	#[serde(rename = "type")]
-	pub type_field: String,
-	pub site_admin: bool,
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]

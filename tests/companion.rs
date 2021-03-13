@@ -1,5 +1,5 @@
 use httptest::{matchers::*, responders::*, Expectation, Server};
-use parity_processbot::github;
+use parity_processbot::{github, setup::setup, webhook::handle_payload};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
@@ -49,4 +49,31 @@ async fn case1() {
 			}
 		}),
 	);
+
+	let state = setup().await.unwrap();
+	let irrelevant_url = "https://foo.bar".to_string();
+	let irrelevant_user = github::User {
+		login: "foo".to_string(),
+	};
+
+	handle_payload(
+		github::Payload::IssueComment {
+			action: github::IssueCommentAction::Created,
+			comment: github::Comment {
+				body: "bot merge".to_string(),
+				user: irrelevant_user.clone(),
+			},
+			issue: github::Issue {
+				id: 1,
+				number: 1,
+				body: Some("foo".to_string()),
+				html_url: irrelevant_url.clone(),
+				repository_url: Some(irrelevant_url.clone()),
+				pull_request: Some(github::IssuePullRequest {}),
+			},
+		},
+		&state,
+	)
+	.await
+	.unwrap();
 }
