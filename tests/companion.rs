@@ -1,5 +1,7 @@
 use httptest::{matchers::*, responders::*, Expectation, Server};
-use parity_processbot::{github, setup::setup, webhook::handle_payload};
+use parity_processbot::{
+	config::MainConfig, github, setup::setup, webhook::handle_payload,
+};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
@@ -50,10 +52,33 @@ async fn case1() {
 		}),
 	);
 
-	let state = setup().await.unwrap();
-	let irrelevant_url = "https://foo.bar".to_string();
+	let irrelevant_string = "".to_string();
+
+	let state = setup(Some(MainConfig {
+		environment: irrelevant_string.clone(),
+		test_repo: irrelevant_string.clone(),
+		installation_login: irrelevant_string.clone(),
+		webhook_secret: irrelevant_string.clone(),
+		webhook_port: irrelevant_string.clone(),
+		db_path: irrelevant_string.clone(),
+		bamboo_token: irrelevant_string.clone(),
+		private_key: vec![],
+		matrix_homeserver: irrelevant_string.clone(),
+		matrix_access_token: irrelevant_string.clone(),
+		matrix_default_channel_id: irrelevant_string.clone(),
+		main_tick_secs: 0,
+		bamboo_tick_secs: 0,
+		matrix_silent: true,
+		gitlab_hostname: irrelevant_string.clone(),
+		gitlab_project: irrelevant_string.clone(),
+		gitlab_job_name: irrelevant_string.clone(),
+		gitlab_private_token: irrelevant_string.clone(),
+	}))
+	.await
+	.unwrap();
+
 	let irrelevant_user = github::User {
-		login: "foo".to_string(),
+		login: irrelevant_string.clone(),
 	};
 
 	handle_payload(
@@ -66,9 +91,9 @@ async fn case1() {
 			issue: github::Issue {
 				id: 1,
 				number: 1,
-				body: Some("foo".to_string()),
-				html_url: irrelevant_url.clone(),
-				repository_url: Some(irrelevant_url.clone()),
+				body: Some(irrelevant_string.clone()),
+				html_url: irrelevant_string.clone(),
+				repository_url: Some(irrelevant_string.clone()),
 				pull_request: Some(github::IssuePullRequest {}),
 			},
 		},

@@ -5,8 +5,10 @@ use crate::{
 };
 use rocksdb::DB;
 
-pub async fn setup() -> anyhow::Result<AppState> {
-	let config = MainConfig::from_env();
+pub async fn setup(
+	main_config: Option<MainConfig>,
+) -> anyhow::Result<AppState> {
+	let config = main_config.unwrap_or_else(|| MainConfig::from_env());
 	env_logger::from_env(env_logger::Env::default().default_filter_or("info"))
 		.init();
 
