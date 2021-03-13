@@ -80,8 +80,8 @@ async fn regression_inner(
 		.arg("clone")
 		.arg("-v")
 		.arg(format!(
-			"https://x-access-token:{token}@github.com/{owner}/{repo}.git",
-			token = token,
+			"{fetch_url}/{owner}/{repo}.git",
+			fetch_url = github_bot.get_fetch_url(&token),
 			owner = base_owner,
 			repo = base_repo,
 		))
@@ -137,8 +137,8 @@ async fn regression_inner(
 		.arg("add")
 		.arg("temp")
 		.arg(format!(
-			"https://x-access-token:{token}@github.com/{owner}/{repo}.git",
-			token = token,
+			"{fetch_url}/{owner}/{repo}.git",
+			fetch_url = github_bot.get_fetch_url(&token),
 			owner = head_owner,
 			repo = head_repo,
 		))

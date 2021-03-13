@@ -11,6 +11,7 @@ pub mod team;
 
 pub struct GithubBot {
 	pub client: crate::http::Client,
+	fetch_url: Option<String>,
 }
 
 impl GithubBot {
@@ -25,13 +26,14 @@ impl GithubBot {
 	pub async fn new(
 		private_key: impl Into<Vec<u8>>,
 		installation_login: &str,
+		fetch_url: Option<String>,
 	) -> Result<Self> {
 		let client = crate::http::Client::new(
 			private_key.into(),
 			installation_login.to_owned(),
 		);
 
-		Ok(Self { client })
+		Ok(Self { client, fetch_url })
 	}
 
 	pub fn owner_from_html_url(url: &str) -> Option<&str> {
@@ -127,6 +129,13 @@ impl GithubBot {
 		);
 		let status = self.client.get_status(url).await?;
 		Ok(status == 204) // Github API returns HTTP 204 (No Content) if the user is a member
+	}
+
+	pub fn get_fetch_url(&self, token: &str) -> String {
+		self.fetch_url
+			.as_ref()
+			.map(|url| url.to_owned())
+			.unwrap_or(format!("https://x-access-token:{}@github.com", token))
 	}
 }
 
