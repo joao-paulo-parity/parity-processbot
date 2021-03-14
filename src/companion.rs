@@ -4,6 +4,11 @@ use tokio::process::Command;
 
 use crate::{error::*, github_bot::GithubBot, Result};
 
+struct CompanionUpdateResult {
+	pub master_ref: String,
+	pub updated_sha: String,
+}
+
 pub async fn companion_update(
 	github_bot: &GithubBot,
 	base_owner: &str,
@@ -11,7 +16,7 @@ pub async fn companion_update(
 	head_owner: &str,
 	head_repo: &str,
 	branch: &str,
-) -> Result<Option<String>> {
+) -> Result<CompanionUpdateResult> {
 	let res = companion_update_inner(
 		github_bot, base_owner, base_repo, head_owner, head_repo, branch,
 	)
@@ -58,9 +63,9 @@ async fn companion_update_inner(
 	head_owner: &str,
 	head_repo: &str,
 	branch: &str,
-) -> Result<Option<String>> {
+) -> Result<CompanionUpdateResult> {
 	let token = github_bot.client.auth_key().await?;
-	let mut updated_sha = None;
+
 	// clone in case the local clone doesn't exist
 	log::info!("Cloning repo.");
 	Command::new("git")
@@ -115,82 +120,102 @@ async fn companion_update_inner(
 		.context(Tokio)?
 		.await
 		.context(Tokio)?;
-	if checkout.success() {
-		// merge origin master
-		log::info!("Merging master.");
-		let merge_master = Command::new("git")
+
+	if !checkout.success() {
+		return Err(Error::Message {
+			msg: format!(
+				"Unable to checkout to master during companion update."
+			),
+		});
+	}
+
+	let master_ref_cmd = Command::new("git")
+		.arg("rev-parse")
+		.arg("origin/master")
+		.current_dir(format!("./{}", base_repo))
+		.output()
+		.await
+		.context(Tokio)?;
+	let master_ref = String::from_utf8(master_ref_cmd.stdout)
+		.context(Utf8)?
+		.trim()
+		.to_string();
+
+	log::info!("Merging master.");
+	let merge_master = Command::new("git")
+		.arg("merge")
+		.arg("origin/master")
+		.arg("--no-ff")
+		.arg("--no-edit")
+		.current_dir(format!("./{}", base_repo))
+		.spawn()
+		.context(Tokio)?
+		.await
+		.context(Tokio)?;
+	if !merge_master.success() {
+		// abort merge
+		log::info!("Aborting merge.");
+		Command::new("git")
 			.arg("merge")
-			.arg("origin/master")
-			.arg("--no-ff")
-			.arg("--no-edit")
+			.arg("--abort")
 			.current_dir(format!("./{}", base_repo))
 			.spawn()
 			.context(Tokio)?
 			.await
 			.context(Tokio)?;
-		if merge_master.success() {
-			// update
-			log::info!("Updating substrate.");
-			Command::new("cargo")
-				.arg("update")
-				.arg("-vp")
-				.arg("sp-io")
-				.current_dir(format!("./{}", base_repo))
-				.spawn()
-				.context(Tokio)?
-				.await
-				.context(Tokio)?;
-			// commit
-			log::info!("Committing changes.");
-			Command::new("git")
-				.arg("commit")
-				.arg("-am")
-				.arg("\"Update Substrate\"")
-				.current_dir(format!("./{}", base_repo))
-				.spawn()
-				.context(Tokio)?
-				.await
-				.context(Tokio)?;
-			// push
-			log::info!("Pushing changes.");
-			Command::new("git")
-				.arg("push")
-				.arg("temp")
-				.arg(format!("{}", branch))
-				.current_dir(format!("./{}", base_repo))
-				.spawn()
-				.context(Tokio)?
-				.await
-				.context(Tokio)?;
-			// rev-parse
-			log::info!("Parsing SHA.");
-			let output = Command::new("git")
-				.arg("rev-parse")
-				.arg("HEAD")
-				.current_dir(format!("./{}", base_repo))
-				.output()
-				.await
-				.context(Tokio)?;
-			updated_sha = Some(
-				String::from_utf8(output.stdout)
-					.context(Utf8)?
-					.trim()
-					.to_string(),
-			);
-		} else {
-			// abort merge
-			log::info!("Aborting merge.");
-			Command::new("git")
-				.arg("merge")
-				.arg("--abort")
-				.current_dir(format!("./{}", base_repo))
-				.spawn()
-				.context(Tokio)?
-				.await
-				.context(Tokio)?;
-		}
+		return Err(Error::Message {
+			msg: format!("Unable to checkout master during companion update."),
+		});
 	}
-	Ok(updated_sha)
+
+	log::info!("Updating substrate.");
+	Command::new("cargo")
+		.arg("update")
+		.arg("-vp")
+		.arg("sp-io")
+		.current_dir(format!("./{}", base_repo))
+		.spawn()
+		.context(Tokio)?
+		.await
+		.context(Tokio)?;
+	log::info!("Committing changes.");
+	Command::new("git")
+		.arg("commit")
+		.arg("-am")
+		.arg("Update Substrate")
+		.current_dir(format!("./{}", base_repo))
+		.spawn()
+		.context(Tokio)?
+		.await
+		.context(Tokio)?;
+	log::info!("Pushing changes.");
+	Command::new("git")
+		.arg("push")
+		.arg("temp")
+		.arg(format!("{}", branch))
+		.current_dir(format!("./{}", base_repo))
+		.spawn()
+		.context(Tokio)?
+		.await
+		.context(Tokio)?;
+
+	log::info!("Parsing SHA.");
+	let output = Command::new("git")
+		.arg("rev-parse")
+		.arg("HEAD")
+		.current_dir(format!("./{}", base_repo))
+		.output()
+		.await
+		.context(Tokio)?;
+	let updated_sha = String::from_utf8(output.stdout)
+		.context(Utf8)?
+		.trim()
+		.to_string();
+
+	Ok(CompanionUpdateResult {
+		master_ref,
+		updated_sha,
+	})
 }
 
 pub fn companion_parse(body: &str) -> Option<(String, String, String, i64)> {

@@ -1092,6 +1092,10 @@ async fn prepare_to_merge(
 	Ok(())
 }
 
+struct MergeAttempt {
+	master_ref: String,
+}
+
 /// Send a merge request.
 async fn merge(
 	github_bot: &GithubBot,
@@ -1099,20 +1103,140 @@ async fn merge(
 	repo_name: &str,
 	pr: &PullRequest,
 ) -> Result<()> {
-	github_bot
-		.merge_pull_request(owner, repo_name, pr.number, &pr.head.sha)
-		.await
-		.map_err(|e| {
-			Error::Merge {
-				source: Box::new(e),
-				commit_sha: pr.head.sha.clone(),
+	let mut previous_attempt: Option<MergeAttempt> = None;
+	let mut companion_attempt: Option<MergeAttempt> = None;
+	let mut head_sha = pr.head.sha;
+
+	loop {
+		if let Some((comp_html_url, comp_owner, comp_repo, comp_number)) =
+			&pr.body.map(|body| companion_parse(&body)).flatten()
+		{
+			if comp_repo == "substrate" {
+				log::info!(
+					"Attempting merge of {} (companion of Substrate: {})",
+					pr.html_url,
+					comp_html_url
+				);
+
+				if let PullRequest {
+					base:
+						Base {
+							repo:
+								HeadRepo {
+									name: base_repo,
+									owner:
+										Some(User {
+											login: base_owner, ..
+										}),
+									..
+								},
+							..
+						},
+					head:
+						Head {
+							ref_field: branch,
+							repo:
+								HeadRepo {
+									name: head_repo,
+									owner:
+										Some(User {
+											login: head_owner, ..
+										}),
+									..
+								},
+							..
+						},
+					..
+				} = &pr
+				{
+					let companion_update_result = companion_update(
+						github_bot, base_owner, base_repo, head_owner,
+						head_repo, branch,
+					)
+					.await?;
+					head_sha = companion_update_result.updated_sha;
+					companion_attempt = Some(MergeAttempt {
+						master_ref: companion_update_result.master_ref,
+					});
+				} else {
+					return Err(Error::Companion {
+						source: Box::new(Error::Message {
+							msg: format!(
+								"Companion PR is missing required fields."
+							),
+						}),
+					}
+					.map_issue(Some((
+						owner.to_string(),
+						repo_name.to_string(),
+						pr.number,
+					))))?;
+				}
+			}
+		}
+
+		let result = github_bot
+			.merge_pull_request(owner, repo_name, pr.number, &head_sha)
+			.await;
+		if let Ok(response) = result {
+			let status = response.status();
+
+			// 405 means "Pull Request is not mergeable"; some PR might have sneaked in in front of
+			// this one, in which case a new master merge commit can be attempted.
+			if status == 405 {
+				if let Some(companion_attempt) = companion_attempt {
+					if let Some(previous_attempt) = previous_attempt {
+						if companion_attempt.master_ref
+							== previous_attempt.master_ref
+						{
+							github_bot
+        						.create_issue_comment(
+        							owner,
+        							&repo_name,
+        							pr.number,
+                                       "Unable to get PR to mergeable state even though master HEAD did
+                                        not change between merge attempts; aborting.",
+        						)
+        						.await
+        						.map_err(|e| {
+        							log::error!("Error posting comment: {}", e);
+        						})?;
+							return Ok(());
+						}
+					}
+				}
+			} else if status != 200 {
+				github_bot
+					.create_issue_comment(
+						owner,
+						&repo_name,
+						pr.number,
+						format!(
+							"Unable to recover from status code {}; aborting.",
+							status
+						)
+						.as_str(),
+					)
+					.await
+					.map_err(|e| {
+						log::error!("Error posting comment: {}", e);
+					})?;
+				return Ok(());
+			}
+		} else {
+			return Err(Error::Message {
+				msg: "Error on merge HTTP request".to_string(),
 			}
 			.map_issue(Some((
 				owner.to_string(),
 				repo_name.to_string(),
 				pr.number,
-			)))
-		})?;
+			))));
+		}
+
+		break;
+	}
+
 	log::info!("{} merged successfully.", pr.html_url);
 	Ok(())
 }
