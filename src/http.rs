@@ -225,7 +225,7 @@ impl Client {
 			&jsonwebtoken::Header::new(jsonwebtoken::Algorithm::RS256),
 			&body,
 			&jsonwebtoken::EncodingKey::from_rsa_pem(&self.private_key)
-				.expect("private key should be RSA pem"),
+				.unwrap(),
 		)
 		.context(error::Jwt)
 	}

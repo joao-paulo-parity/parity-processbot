@@ -1350,9 +1350,9 @@ async fn update_companion(
 
 				if let PullRequest {
 					number,
-					user: User {
+					user: Some(User {
 						login: pr_author, ..
-					},
+					}),
 					head:
 						Head {
 							repo:

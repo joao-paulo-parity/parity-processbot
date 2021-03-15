@@ -1,6 +1,8 @@
 use httptest::{matchers::*, responders::*, Expectation, Server};
 use parity_processbot::{
-	config::MainConfig, github, github_bot, setup::setup,
+	config::{BotConfig, MainConfig},
+	github, github_bot, gitlab_bot, matrix_bot,
+	setup::setup,
 	webhook::handle_payload,
 };
 use std::fs;
@@ -19,6 +21,8 @@ async fn case1() {
 		login: "foo".to_string(),
 	};
 	let placeholder_number = 1;
+
+	let db_dir = tempfile::tempdir().unwrap();
 
 	let git_daemon_dir = tempfile::tempdir().unwrap();
 	let git_daemon_port = utils::get_available_port().unwrap();
@@ -49,9 +53,11 @@ description = "substrate"
 "#,
 	)
 	.unwrap();
+
 	let substrate_src_dir = &substrate_repo_dir.join("src");
-	fs::create_dir(substrate_src_dir).unwrap();
-	fs::write(substrate_src_dir.join("main.rs"), "fn main() {}").unwrap();
+	fs::create_dir(&substrate_src_dir).unwrap();
+	fs::write((&substrate_src_dir).join("main.rs"), "fn main() {}").unwrap();
+
 	Command::new("git")
 		.arg("add")
 		.arg(".")
@@ -79,13 +85,13 @@ description = "substrate"
 	fs::create_dir_all(&companion_repo_dir).unwrap();
 	Command::new("git")
 		.arg("init")
-		.current_dir(&substrate_repo_dir)
+		.current_dir(&companion_repo_dir)
 		.spawn()
 		.unwrap()
 		.await
 		.unwrap();
 	fs::write(
-		&substrate_repo_dir.join("Cargo.toml"),
+		&companion_repo_dir.join("Cargo.toml"),
 		r#"
 [package]
 name = "companion"
@@ -106,10 +112,11 @@ git_fetch_url
 	let companion_src_dir = &companion_repo_dir.join("src");
 	fs::create_dir(&companion_src_dir).unwrap();
 	fs::write((&companion_src_dir).join("main.rs"), "fn main() {}").unwrap();
+
 	Command::new("git")
 		.arg("add")
 		.arg(".")
-		.current_dir(&substrate_repo_dir)
+		.current_dir(&companion_repo_dir)
 		.spawn()
 		.unwrap()
 		.await
@@ -118,12 +125,13 @@ git_fetch_url
 		.arg("commit")
 		.arg("-m")
 		.arg("init")
-		.current_dir(&substrate_repo_dir)
+		.current_dir(&companion_repo_dir)
 		.spawn()
 		.unwrap()
 		.await
 		.unwrap();
 
+	// Hold onto the git daemon process handle until the test is done
 	let _ = Command::new("git")
 		.arg("daemon")
 		.arg(format!("--port={}", git_daemon_port))
@@ -143,19 +151,31 @@ git_fetch_url
 		format!("https://github.com/{}/{}", substrate_org, substrate_repo);
 	let substrate_pr_url =
 		format!("{}/pull/{}", substrate_repository_url, substrate_pr_number);
-	let substrate_api_merge_path = format!(
-		"/{}/repos/{}/{}/pulls/{}/merge",
-		github::base_api_url(),
-		substrate_org,
-		substrate_repo,
-		substrate_pr_number
+	github_api.expect(
+		Expectation::matching(request::method_path(
+			"PUT",
+			format!(
+				"/{}/repos/{}/{}/pulls/{}/merge",
+				github::base_api_url(),
+				substrate_org,
+				substrate_repo,
+				substrate_pr_number
+			),
+		))
+		.respond_with(status_code(200)),
 	);
 	github_api.expect(
 		Expectation::matching(request::method_path(
 			"PUT",
-			substrate_api_merge_path,
+			format!(
+				"/{}/repos/{}/{}/pulls/{}",
+				github::base_api_url(),
+				substrate_org,
+				substrate_repo,
+				substrate_pr_number
+			),
 		))
-		.respond_with(status_code(200)),
+		.respond_with(json_encoded(github::PullRequest {})),
 	);
 
 	let companion_pr_number = 1;
@@ -165,8 +185,8 @@ git_fetch_url
 	let companion_api_merge_path = format!(
 		"/{}/repos/{}/{}/pulls/{}/merge",
 		github::base_api_url(),
-		"companion",
-		"companion",
+		companion_org,
+		companion_repo,
 		companion_pr_number
 	);
 	let companion_merge_tries = Arc::new(AtomicUsize::new(0));
@@ -184,6 +204,18 @@ git_fetch_url
 		}),
 	);
 
+	let placeholder_private_key = "-----BEGIN RSA PRIVATE KEY-----
+MIIBPQIBAAJBAOsfi5AGYhdRs/x6q5H7kScxA0Kzzqe6WI6gf6+tc6IvKQJo5rQc
+dWWSQ0nRGt2hOPDO+35NKhQEjBQxPh/v7n0CAwEAAQJBAOGaBAyuw0ICyENy5NsO
+2gkT00AWTSzM9Zns0HedY31yEabkuFvrMCHjscEF7u3Y6PB7An3IzooBHchsFDei
+AAECIQD/JahddzR5K3A6rzTidmAf1PBtqi7296EnWv8WvpfAAQIhAOvowIXZI4Un
+DXjgZ9ekuUjZN+GUQRAVlkEEohGLVy59AiEA90VtqDdQuWWpvJX0cM08V10tLXrT
+TTGsEtITid1ogAECIQDAaFl90ZgS5cMrL3wCeatVKzVUmuJmB/VAmlLFFGzK0QIh
+ANJGc7AFk4fyFD/OezhwGHbWmo/S+bfeAiIh2Ss2FxKJ
+-----END RSA PRIVATE KEY-----"
+		.as_bytes()
+		.to_vec();
+
 	let state = setup(
 		Some(MainConfig {
 			environment: placeholder_string.clone(),
@@ -191,9 +223,9 @@ git_fetch_url
 			installation_login: placeholder_string.clone(),
 			webhook_secret: placeholder_string.clone(),
 			webhook_port: placeholder_string.clone(),
-			db_path: placeholder_string.clone(),
+			db_path: (&db_dir).path().display().to_string(),
 			bamboo_token: placeholder_string.clone(),
-			private_key: vec![],
+			private_key: placeholder_private_key.clone(),
 			matrix_homeserver: placeholder_string.clone(),
 			matrix_access_token: placeholder_string.clone(),
 			matrix_default_channel_id: placeholder_string.clone(),
@@ -205,7 +237,29 @@ git_fetch_url
 			gitlab_job_name: placeholder_string.clone(),
 			gitlab_private_token: placeholder_string.clone(),
 		}),
-		Some(github_bot::GithubBot::new_for_testing(Some(git_fetch_url))),
+		Some(BotConfig {
+			status_failure_ping: 0,
+			issue_not_addressed_ping: 0,
+			issue_not_assigned_to_pr_author_ping: 0,
+			no_project_author_is_core_ping: 0,
+			no_project_author_is_core_close_pr: 0,
+			no_project_author_unknown_close_pr: 0,
+			project_confirmation_timeout: 0,
+			review_request_ping: 0,
+			private_review_reminder_ping: 0,
+			public_review_reminder_ping: 0,
+			public_review_reminder_delay: 0,
+			min_reviewers: 0,
+			core_sorting_repo_name: placeholder_string.clone(),
+			logs_room_id: placeholder_string.clone(),
+		}),
+		Some(matrix_bot::MatrixBot::new_placeholder_for_testing()),
+		Some(gitlab_bot::GitlabBot::new_placeholder_for_testing()),
+		Some(github_bot::GithubBot::new_for_testing(
+			placeholder_private_key.clone(),
+			git_fetch_url,
+		)),
+		false,
 	)
 	.await
 	.unwrap();

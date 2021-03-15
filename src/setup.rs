@@ -7,30 +7,47 @@ use rocksdb::DB;
 
 pub async fn setup(
 	conf: Option<MainConfig>,
-	gh_bot: Option<github_bot::GithubBot>,
+	bot_config: Option<BotConfig>,
+	matrix_bot: Option<matrix_bot::MatrixBot>,
+	gitlab_bot: Option<gitlab_bot::GitlabBot>,
+	github_bot: Option<github_bot::GithubBot>,
+	should_init_logger: bool,
 ) -> anyhow::Result<AppState> {
 	let config = conf.unwrap_or_else(|| MainConfig::from_env());
+	let bot_config = bot_config.unwrap_or_else(|| BotConfig::from_env());
 
-	env_logger::from_env(env_logger::Env::default().default_filter_or("info"))
+	if should_init_logger {
+		env_logger::from_env(
+			env_logger::Env::default().default_filter_or("info"),
+		)
 		.init();
+	}
 
+	log::info!("nice!",);
 	let db = DB::open_default(&config.db_path)?;
 
-	log::info!(
-		"Connecting to Matrix homeserver {}",
-		config.matrix_homeserver,
-	);
-	let matrix_bot = matrix_bot::MatrixBot::new_with_token(
-		&config.matrix_homeserver,
-		&config.matrix_access_token,
-		&config.matrix_default_channel_id,
-		config.matrix_silent,
-	)?;
+	let matrix_bot = if let Some(matrix_bot) = matrix_bot {
+		matrix_bot
+	} else {
+		log::info!(
+			"Connecting to Matrix homeserver {}",
+			config.matrix_homeserver,
+		);
+		matrix_bot::MatrixBot::new_with_token(
+			&config.matrix_homeserver,
+			&config.matrix_access_token,
+			&config.matrix_default_channel_id,
+			config.matrix_silent,
+		)?
+	};
 
-	log::info!("Connecting to Github account {}", config.installation_login);
-	let github_bot = if let Some(github_bot) = gh_bot {
+	let github_bot = if let Some(github_bot) = github_bot {
 		github_bot
 	} else {
+		log::info!(
+			"Connecting to Github account {}",
+			config.installation_login
+		);
 		github_bot::GithubBot::new(
 			config.private_key.clone(),
 			&config.installation_login,
@@ -38,13 +55,17 @@ pub async fn setup(
 		.await?
 	};
 
-	log::info!("Connecting to Gitlab https://{}", config.gitlab_hostname);
-	let gitlab_bot = gitlab_bot::GitlabBot::new_with_token(
-		&config.gitlab_hostname,
-		&config.gitlab_project,
-		&config.gitlab_job_name,
-		&config.gitlab_private_token,
-	)?;
+	let gitlab_bot = if let Some(gitlab_bot) = gitlab_bot {
+		gitlab_bot
+	} else {
+		log::info!("Connecting to Gitlab https://{}", config.gitlab_hostname);
+		gitlab_bot::GitlabBot::new_with_token(
+			&config.gitlab_hostname,
+			&config.gitlab_project,
+			&config.gitlab_job_name,
+			&config.gitlab_private_token,
+		)?
+	};
 
 	// the bamboo queries can take a long time so only wait for it
 	// on launch. subsequently update in the background.
@@ -93,7 +114,7 @@ pub async fn setup(
 		github_bot,
 		matrix_bot,
 		gitlab_bot,
-		bot_config: BotConfig::from_env(),
+		bot_config,
 		config,
 	})
 }

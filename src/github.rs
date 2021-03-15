@@ -3,7 +3,6 @@ use serde::{Deserialize, Serialize};
 
 pub trait GithubIssue {
 	fn number(&self) -> i64;
-	fn id(&self) -> i64;
 	fn html_url(&self) -> &String;
 	fn body(&self) -> Option<&String>;
 }
@@ -11,54 +10,19 @@ pub trait GithubIssue {
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PullRequest {
 	pub url: String,
-	pub id: i64,
-	pub node_id: Option<String>,
 	pub html_url: String,
-	pub diff_url: Option<String>,
-	pub patch_url: Option<String>,
-	pub issue_url: Option<String>,
-	pub commits_url: Option<String>,
-	pub review_comments_url: Option<String>,
-	pub review_comment_url: Option<String>,
-	pub comments_url: Option<String>,
-	pub statuses_url: Option<String>,
 	pub number: i64,
-	pub state: Option<String>,
-	pub locked: Option<bool>,
-	pub title: Option<String>,
-	pub user: User,
+	pub user: Option<User>,
 	pub body: Option<String>,
 	pub labels: Vec<Label>,
-	pub milestone: Option<Milestone>,
-	pub active_lock_reason: Option<String>,
-	pub created_at: Option<chrono::DateTime<chrono::Utc>>,
-	pub updated_at: Option<chrono::DateTime<chrono::Utc>>,
-	pub closed_at: Option<String>,
-	pub merged: Option<bool>,
 	pub mergeable: Option<bool>,
-	pub merged_at: Option<String>,
-	pub merge_commit_sha: Option<String>,
-	pub assignee: Option<User>,
-	pub assignees: Option<Vec<User>>,
-	pub requested_reviewers: Option<Vec<User>>,
-	pub requested_teams: Option<Vec<RequestedTeam>>,
 	pub head: Head,
 	pub base: Base,
-	#[serde(rename = "_links")]
-	pub links: Option<Links>,
-	pub author_association: Option<String>,
-	pub draft: Option<bool>,
-	#[serde(rename = "repo")]
-	pub repository: Option<Repository>,
 }
 
 impl GithubIssue for PullRequest {
 	fn number(&self) -> i64 {
 		self.number
-	}
-
-	fn id(&self) -> i64 {
-		self.id
 	}
 
 	fn html_url(&self) -> &String {
@@ -83,10 +47,6 @@ pub struct Issue {
 impl GithubIssue for Issue {
 	fn number(&self) -> i64 {
 		self.number
-	}
-
-	fn id(&self) -> i64 {
-		self.id
 	}
 
 	fn html_url(&self) -> &String {

@@ -37,10 +37,13 @@ impl GithubBot {
 		})
 	}
 
-	pub fn new_for_testing(fetch_url: Option<String>) -> Self {
-		let client = crate::http::Client::new(vec![], "".to_string());
+	pub fn new_for_testing(private_key: Vec<u8>, fetch_url: String) -> Self {
+		let client = crate::http::Client::new(private_key, "".to_string());
 
-		Self { client, fetch_url }
+		Self {
+			client,
+			fetch_url: Some(fetch_url),
+		}
 	}
 
 	pub fn owner_from_html_url(url: &str) -> Option<&str> {
