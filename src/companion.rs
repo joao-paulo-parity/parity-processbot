@@ -4,59 +4,12 @@ use tokio::process::Command;
 
 use crate::{error::*, github_bot::GithubBot, Result};
 
-struct CompanionUpdateResult {
+pub struct CompanionUpdateResult {
 	pub master_ref: String,
 	pub updated_sha: String,
 }
 
-pub async fn companion_update(
-	github_bot: &GithubBot,
-	base_owner: &str,
-	base_repo: &str,
-	head_owner: &str,
-	head_repo: &str,
-	branch: &str,
-) -> Result<CompanionUpdateResult> {
-	let res = companion_update_inner(
-		github_bot, base_owner, base_repo, head_owner, head_repo, branch,
-	)
-	.await;
-	// checkout origin master
-	log::info!("Checking out master.");
-	Command::new("git")
-		.arg("checkout")
-		.arg("master")
-		.current_dir(format!("./{}", base_repo))
-		.spawn()
-		.context(Tokio)?
-		.await
-		.context(Tokio)?;
-	// delete temp branch
-	log::info!("Deleting head branch.");
-	Command::new("git")
-		.arg("branch")
-		.arg("-D")
-		.arg(format!("{}", branch))
-		.current_dir(format!("./{}", base_repo))
-		.spawn()
-		.context(Tokio)?
-		.await
-		.context(Tokio)?;
-	// remove temp remote
-	log::info!("Removing temp remote.");
-	Command::new("git")
-		.arg("remote")
-		.arg("remove")
-		.arg("temp")
-		.current_dir(format!("./{}", base_repo))
-		.spawn()
-		.context(Tokio)?
-		.await
-		.context(Tokio)?;
-	res
-}
-
-async fn companion_update_inner(
+pub async fn update_companion_repository(
 	github_bot: &GithubBot,
 	base_owner: &str,
 	base_repo: &str,
@@ -65,62 +18,53 @@ async fn companion_update_inner(
 	branch: &str,
 ) -> Result<CompanionUpdateResult> {
 	let token = github_bot.client.auth_key().await?;
+	let fetch_url = github_bot.get_fetch_url(&token);
+	let base_repo_dir_string = format!("./{}", base_repo);
+	let base_repo_dir = base_repo_dir_string.as_str();
 
-	// clone in case the local clone doesn't exist
 	log::info!("Cloning repo.");
 	Command::new("git")
 		.arg("clone")
 		.arg("-v")
-		.arg(format!(
-			"{fetch_url}/{owner}/{repo}.git",
-			fetch_url = github_bot.get_fetch_url(&token),
-			owner = base_owner,
-			repo = base_repo,
-		))
+		.arg(format!("{}/{}/{}.git", fetch_url, base_owner, base_repo))
 		.spawn()
 		.context(Tokio)?
 		.await
 		.context(Tokio)?;
-	// add temp remote
+
 	log::info!("Adding temp remote.");
 	Command::new("git")
 		.arg("remote")
 		.arg("add")
 		.arg("temp")
-		.arg(format!(
-			"{fetch_url}/{owner}/{repo}.git",
-			fetch_url = github_bot.get_fetch_url(&token),
-			owner = head_owner,
-			repo = head_repo,
-		))
-		.current_dir(format!("./{}", base_repo))
-		.spawn()
-		.context(Tokio)?
-		.await
-		.context(Tokio)?;
-	// fetch temp
-	log::info!("Fetching temp.");
-	Command::new("git")
-		.arg("fetch")
-		.arg("temp")
-		.current_dir(format!("./{}", base_repo))
-		.spawn()
-		.context(Tokio)?
-		.await
-		.context(Tokio)?;
-	// checkout temp branch
-	log::info!("Checking out head branch.");
-	let checkout = Command::new("git")
-		.arg("checkout")
-		.arg("-b")
-		.arg(format!("{}", branch))
-		.arg(format!("temp/{}", branch))
-		.current_dir(format!("./{}", base_repo))
+		.arg(format!("{}/{}/{}.git", fetch_url, head_owner, head_repo,))
+		.current_dir(base_repo_dir)
 		.spawn()
 		.context(Tokio)?
 		.await
 		.context(Tokio)?;
 
+	log::info!("Fetching temp.");
+	Command::new("git")
+		.arg("fetch")
+		.arg("temp")
+		.current_dir(base_repo_dir)
+		.spawn()
+		.context(Tokio)?
+		.await
+		.context(Tokio)?;
+
+	log::info!("Checking out head branch.");
+	let checkout = Command::new("git")
+		.arg("checkout")
+		.arg("-b")
+		.arg(branch)
+		.arg(format!("temp/{}", branch))
+		.current_dir(base_repo_dir)
+		.spawn()
+		.context(Tokio)?
+		.await
+		.context(Tokio)?;
 	if !checkout.success() {
 		return Err(Error::Message {
 			msg: format!(
@@ -132,7 +76,7 @@ async fn companion_update_inner(
 	let master_ref_cmd = Command::new("git")
 		.arg("rev-parse")
 		.arg("origin/master")
-		.current_dir(format!("./{}", base_repo))
+		.current_dir(base_repo_dir)
 		.output()
 		.await
 		.context(Tokio)?;
@@ -147,7 +91,7 @@ async fn companion_update_inner(
 		.arg("origin/master")
 		.arg("--no-ff")
 		.arg("--no-edit")
-		.current_dir(format!("./{}", base_repo))
+		.current_dir(base_repo_dir)
 		.spawn()
 		.context(Tokio)?
 		.await
@@ -158,7 +102,7 @@ async fn companion_update_inner(
 		Command::new("git")
 			.arg("merge")
 			.arg("--abort")
-			.current_dir(format!("./{}", base_repo))
+			.current_dir(base_repo_dir)
 			.spawn()
 			.context(Tokio)?
 			.await
@@ -173,27 +117,18 @@ async fn companion_update_inner(
 		.arg("update")
 		.arg("-vp")
 		.arg("sp-io")
-		.current_dir(format!("./{}", base_repo))
+		.current_dir(base_repo_dir)
 		.spawn()
 		.context(Tokio)?
 		.await
 		.context(Tokio)?;
+
 	log::info!("Committing changes.");
 	Command::new("git")
 		.arg("commit")
 		.arg("-am")
-		.arg("Update Substrate")
-		.current_dir(format!("./{}", base_repo))
-		.spawn()
-		.context(Tokio)?
-		.await
-		.context(Tokio)?;
-	log::info!("Pushing changes.");
-	Command::new("git")
-		.arg("push")
-		.arg("temp")
-		.arg(format!("{}", branch))
-		.current_dir(format!("./{}", base_repo))
+		.arg("update Substrate")
+		.current_dir(base_repo_dir)
 		.spawn()
 		.context(Tokio)?
 		.await
@@ -203,7 +138,7 @@ async fn companion_update_inner(
 	let output = Command::new("git")
 		.arg("rev-parse")
 		.arg("HEAD")
-		.current_dir(format!("./{}", base_repo))
+		.current_dir(base_repo_dir)
 		.output()
 		.await
 		.context(Tokio)?;
@@ -211,6 +146,28 @@ async fn companion_update_inner(
 		.context(Utf8)?
 		.trim()
 		.to_string();
+
+	log::info!("Pushing changes.");
+	Command::new("git")
+		.arg("push")
+		.arg("temp")
+		.arg(format!("{}", branch))
+		.current_dir(base_repo_dir)
+		.spawn()
+		.context(Tokio)?
+		.await
+		.context(Tokio)?;
+
+	log::info!("Removing temp remote.");
+	Command::new("git")
+		.arg("remote")
+		.arg("remove")
+		.arg("temp")
+		.current_dir(format!("./{}", base_repo))
+		.spawn()
+		.context(Tokio)?
+		.await
+		.context(Tokio)?;
 
 	Ok(CompanionUpdateResult {
 		master_ref,

@@ -25,18 +25,16 @@ async fn case1() {
 
 	let substrate_repo_dir =
 		git_daemon_dir.path().join("substrate").join("substrate");
-	fs::create_dir_all(substrate_repo_dir).unwrap();
+	fs::create_dir_all(&substrate_repo_dir).unwrap();
 	Command::new("git")
 		.arg("init")
-		.current_dir(substrate_repo_dir)
+		.current_dir(&substrate_repo_dir)
 		.spawn()
-		.context(Tokio)
 		.unwrap()
 		.await
-		.context(Tokio)
 		.unwrap();
 	fs::write(
-		substrate_repo_dir.join("Cargo.toml"),
+		&substrate_repo_dir.join("Cargo.toml"),
 		r#"
 [package]
 name = "substrate"
@@ -46,45 +44,39 @@ description = "substrate"
 "#,
 	)
 	.unwrap();
-	let substrate_src_dir = substrate_repo_dir.join("src");
+	let substrate_src_dir = &substrate_repo_dir.join("src");
 	fs::create_dir(substrate_src_dir).unwrap();
 	fs::write(substrate_src_dir.join("main.rs"), "fn main() {}").unwrap();
 	Command::new("git")
 		.arg("add")
 		.arg(".")
-		.current_dir(substrate_repo_dir)
+		.current_dir(&substrate_repo_dir)
 		.spawn()
-		.context(Tokio)
 		.unwrap()
 		.await
-		.context(Tokio)
 		.unwrap();
 	Command::new("git")
 		.arg("commit")
 		.arg("-m")
 		.arg("init")
-		.current_dir(substrate_repo_dir)
+		.current_dir(&substrate_repo_dir)
 		.spawn()
-		.context(Tokio)
 		.unwrap()
 		.await
-		.context(Tokio)
 		.unwrap();
 
-	let mut companion_repo_dir =
+	let companion_repo_dir =
 		git_daemon_dir.path().join("companion").join("companion");
-	fs::create_dir_all(companion_repo_dir).unwrap();
+	fs::create_dir_all(&companion_repo_dir).unwrap();
 	Command::new("git")
 		.arg("init")
-		.current_dir(substrate_repo_dir)
+		.current_dir(&substrate_repo_dir)
 		.spawn()
-		.context(Tokio)
 		.unwrap()
 		.await
-		.context(Tokio)
 		.unwrap();
 	fs::write(
-		substrate_repo_dir.join("Cargo.toml"),
+		&substrate_repo_dir.join("Cargo.toml"),
 		r#"
 [package]
 name = "companion"
@@ -93,35 +85,34 @@ authors = ["companion <companion@companion.com>"]
 description = "companion"
 
 [dependencies]
-"# + format!(
-        "substrate = { git = \"{}/substrate/substrate\", branch = \"master\" }",
-        git_fetch_url
-    ),
+"#
+		.to_string() + format!(
+"substrate = {{ git = \"{}/substrate/substrate\", branch = \"master\" }}",
+git_fetch_url
+)
+		.as_str(),
 	)
 	.unwrap();
-	let companion_src_dir = companion_repo_dir.join("src");
-	fs::create_dir(companion_src_dir).unwrap();
-	fs::write(companion_src_dir.join("main.rs"), "fn main() {}").unwrap();
+
+	let companion_src_dir = &companion_repo_dir.join("src");
+	fs::create_dir(&companion_src_dir).unwrap();
+	fs::write((&companion_src_dir).join("main.rs"), "fn main() {}").unwrap();
 	Command::new("git")
 		.arg("add")
 		.arg(".")
-		.current_dir(substrate_repo_dir)
+		.current_dir(&substrate_repo_dir)
 		.spawn()
-		.context(Tokio)
 		.unwrap()
 		.await
-		.context(Tokio)
 		.unwrap();
 	Command::new("git")
 		.arg("commit")
 		.arg("-m")
 		.arg("init")
-		.current_dir(substrate_repo_dir)
+		.current_dir(&substrate_repo_dir)
 		.spawn()
-		.context(Tokio)
 		.unwrap()
 		.await
-		.context(Tokio)
 		.unwrap();
 
 	let _ = Command::new("git")
@@ -131,7 +122,6 @@ description = "companion"
 		.arg("--export-all")
 		.current_dir(git_daemon_dir.path())
 		.spawn()
-		.context(Tokio)
 		.unwrap();
 
 	let github_api = Server::run();
