@@ -6,6 +6,7 @@ use parity_processbot::{
 	webhook::handle_payload,
 };
 use std::fs;
+use std::process::Stdio;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use tokio::process::Command;
@@ -21,6 +22,7 @@ async fn case1() {
 		login: "foo".to_string(),
 	};
 	let placeholder_number = 1;
+	let placeholder_sha = "MDEwOlJlcG9zaXRvcnkxMDk4NzI2MjA=";
 
 	let db_dir = tempfile::tempdir().unwrap();
 
@@ -37,6 +39,7 @@ async fn case1() {
 	fs::create_dir_all(&substrate_repo_dir).unwrap();
 	Command::new("git")
 		.arg("init")
+		.stdout(Stdio::null())
 		.current_dir(&substrate_repo_dir)
 		.spawn()
 		.unwrap()
@@ -62,6 +65,7 @@ description = "substrate"
 		.arg("add")
 		.arg(".")
 		.current_dir(&substrate_repo_dir)
+		.stdout(Stdio::null())
 		.spawn()
 		.unwrap()
 		.await
@@ -70,11 +74,23 @@ description = "substrate"
 		.arg("commit")
 		.arg("-m")
 		.arg("init")
+		.stdout(Stdio::null())
 		.current_dir(&substrate_repo_dir)
 		.spawn()
 		.unwrap()
 		.await
 		.unwrap();
+	let substrate_head_sha_cmd = Command::new("git")
+		.arg("rev-parse")
+		.arg("HEAD")
+		.current_dir(&substrate_repo_dir)
+		.output()
+		.await
+		.unwrap();
+	let substrate_head_sha = String::from_utf8(substrate_head_sha_cmd.stdout)
+		.unwrap()
+		.trim()
+		.to_string();
 
 	let companion_org = "companion";
 	let companion_repo = "companion";
@@ -85,6 +101,7 @@ description = "substrate"
 	fs::create_dir_all(&companion_repo_dir).unwrap();
 	Command::new("git")
 		.arg("init")
+		.stdout(Stdio::null())
 		.current_dir(&companion_repo_dir)
 		.spawn()
 		.unwrap()
@@ -116,6 +133,7 @@ git_fetch_url
 	Command::new("git")
 		.arg("add")
 		.arg(".")
+		.stdout(Stdio::null())
 		.current_dir(&companion_repo_dir)
 		.spawn()
 		.unwrap()
@@ -125,6 +143,7 @@ git_fetch_url
 		.arg("commit")
 		.arg("-m")
 		.arg("init")
+		.stdout(Stdio::null())
 		.current_dir(&companion_repo_dir)
 		.spawn()
 		.unwrap()
@@ -137,6 +156,7 @@ git_fetch_url
 		.arg(format!("--port={}", git_daemon_port))
 		.arg("--base-path=.")
 		.arg("--export-all")
+		.stdout(Stdio::null())
 		.current_dir(git_daemon_dir.path())
 		.spawn()
 		.unwrap();
@@ -148,7 +168,7 @@ git_fetch_url
 
 	let substrate_pr_number = 1;
 	let substrate_repository_url =
-		format!("https://github.com/{}/{}", substrate_org, substrate_repo);
+		format!("https://foo.com/{}/{}", substrate_org, substrate_repo);
 	let substrate_pr_url =
 		format!("{}/pull/{}", substrate_repository_url, substrate_pr_number);
 	github_api.expect(
@@ -175,7 +195,35 @@ git_fetch_url
 				substrate_pr_number
 			),
 		))
-		.respond_with(json_encoded(github::PullRequest {})),
+		.respond_with(json_encoded(github::PullRequest {
+			body: Some(placeholder_string.clone()),
+			number: substrate_pr_number,
+			labels: vec![],
+			mergeable: Some(true),
+			html_url: substrate_pr_url.clone(),
+			url: substrate_pr_url.clone(),
+			user: Some(placeholder_user.clone()),
+			base: github::Base {
+				ref_field: "master".to_string(),
+				sha: substrate_head_sha,
+				repo: github::HeadRepo {
+					name: substrate_repo.to_string(),
+					owner: Some(github::User {
+						login: substrate_org.to_string(),
+					}),
+				},
+			},
+			head: github::Head {
+				ref_field: "develop".to_string(),
+				sha: placeholder_sha.to_string(),
+				repo: github::HeadRepo {
+					name: substrate_repo.to_string(),
+					owner: Some(github::User {
+						login: substrate_org.to_string(),
+					}),
+				},
+			},
+		})),
 	);
 
 	let companion_pr_number = 1;

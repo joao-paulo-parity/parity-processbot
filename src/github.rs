@@ -20,20 +20,6 @@ pub struct PullRequest {
 	pub base: Base,
 }
 
-impl GithubIssue for PullRequest {
-	fn number(&self) -> i64 {
-		self.number
-	}
-
-	fn html_url(&self) -> &String {
-		&self.html_url
-	}
-
-	fn body(&self) -> Option<&String> {
-		self.body.as_ref()
-	}
-}
-
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Issue {
 	pub number: i64,
@@ -42,20 +28,6 @@ pub struct Issue {
 	pub body: Option<String>,
 	pub pull_request: Option<IssuePullRequest>,
 	pub repository_url: Option<String>,
-}
-
-impl GithubIssue for Issue {
-	fn number(&self) -> i64 {
-		self.number
-	}
-
-	fn html_url(&self) -> &String {
-		&self.html_url
-	}
-
-	fn body(&self) -> Option<&String> {
-		self.body.as_ref()
-	}
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -257,11 +229,10 @@ pub struct Plan {
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct IssuePullRequest {}
+pub struct IssuePullRequest;
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Head {
-	pub label: Option<String>,
 	#[serde(rename = "ref")]
 	pub ref_field: String,
 	pub sha: String,
@@ -671,8 +642,6 @@ pub struct CheckRunPR {
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct HeadRepo {
-	pub id: i64,
-	pub url: String,
 	pub name: String,
 	pub owner: Option<User>,
 }
