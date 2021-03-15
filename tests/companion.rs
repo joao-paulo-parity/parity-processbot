@@ -18,13 +18,18 @@ async fn case1() {
 	let placeholder_user = github::User {
 		login: "foo".to_string(),
 	};
+	let placeholder_number = 1;
 
 	let git_daemon_dir = tempfile::tempdir().unwrap();
 	let git_daemon_port = utils::get_available_port().unwrap();
 	let git_fetch_url = format!("git://127.0.0.1:{}", git_daemon_port);
 
-	let substrate_repo_dir =
-		git_daemon_dir.path().join("substrate").join("substrate");
+	let substrate_org = "substrate";
+	let substrate_repo = "substrate";
+	let substrate_repo_dir = git_daemon_dir
+		.path()
+		.join(substrate_org)
+		.join(substrate_repo);
 	fs::create_dir_all(&substrate_repo_dir).unwrap();
 	Command::new("git")
 		.arg("init")
@@ -65,8 +70,12 @@ description = "substrate"
 		.await
 		.unwrap();
 
-	let companion_repo_dir =
-		git_daemon_dir.path().join("companion").join("companion");
+	let companion_org = "companion";
+	let companion_repo = "companion";
+	let companion_repo_dir = git_daemon_dir
+		.path()
+		.join(companion_org)
+		.join(companion_repo);
 	fs::create_dir_all(&companion_repo_dir).unwrap();
 	Command::new("git")
 		.arg("init")
@@ -130,15 +139,16 @@ git_fetch_url
 		.unwrap();
 
 	let substrate_pr_number = 1;
-	let substrate_repository_url = "https://github.com/substrate/substrate";
+	let substrate_repository_url =
+		format!("https://github.com/{}/{}", substrate_org, substrate_repo);
 	let substrate_pr_url =
 		format!("{}/pull/{}", substrate_repository_url, substrate_pr_number);
 	let substrate_api_merge_path = format!(
 		"/{}/repos/{}/{}/pulls/{}/merge",
 		github::base_api_url(),
-		"substrate",
-		"substrate",
-		1
+		substrate_org,
+		substrate_repo,
+		substrate_pr_number
 	);
 	github_api.expect(
 		Expectation::matching(request::method_path(
@@ -157,7 +167,7 @@ git_fetch_url
 		github::base_api_url(),
 		"companion",
 		"companion",
-		1
+		companion_pr_number
 	);
 	let companion_merge_tries = Arc::new(AtomicUsize::new(0));
 	github_api.expect(
@@ -208,7 +218,7 @@ git_fetch_url
 				user: placeholder_user.clone(),
 			},
 			issue: github::Issue {
-				id: 1,
+				id: placeholder_number,
 				number: substrate_pr_number,
 				body: Some(placeholder_string.clone()),
 				html_url: substrate_pr_url,
@@ -229,7 +239,7 @@ git_fetch_url
 				user: placeholder_user.clone(),
 			},
 			issue: github::Issue {
-				id: 1,
+				id: placeholder_number,
 				number: companion_pr_number,
 				body: Some(placeholder_string.clone()),
 				html_url: companion_pr_url,
