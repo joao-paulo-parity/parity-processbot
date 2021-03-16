@@ -1,195 +1,146 @@
 use regex::Regex;
 use snafu::ResultExt;
-use tokio::process::Command;
+use std::path::Path;
 
-use crate::{error::*, github_bot::GithubBot, Result};
+use crate::{error::*, github_bot::GithubBot, utils::*, Result};
 
 pub async fn companion_update(
 	github_bot: &GithubBot,
-	base_owner: &str,
-	base_repo: &str,
-	head_owner: &str,
-	head_repo: &str,
+	owner: &str,
+	owner_repo: &str,
+	contributor: &str,
+	contributor_repo: &str,
 	branch: &str,
-) -> Result<Option<String>> {
-	let res = companion_update_inner(
-		github_bot, base_owner, base_repo, head_owner, head_repo, branch,
+) -> Result<String> {
+	let token = github_bot.client.auth_key().await?;
+
+	let owner_repository_domain =
+		format!("github.com/{}/{}.git", owner, owner_repo);
+	let owner_remote_address = format!(
+		"https://x-access-token:{}@{}",
+		token, owner_repository_domain
+	);
+	let repo_dir = format!("./{}", owner_repo);
+
+	if Path::new(&repo_dir).exists() {
+		log::info!("{} is already cloned; skipping", owner_repository_domain);
+	} else {
+		run_cmd_in_cwd(
+			"git",
+			&["clone", "-v", (&owner_remote_address).as_str()],
+		)
+		.await?;
+	}
+
+	let contributor_remote = "contributor";
+	let contributor_repository_domain =
+		format!("github.com/{}/{}.git", contributor, contributor_repo);
+	let contributor_remote_address = format!(
+		"https://x-access-token:{}@{}",
+		token, contributor_repository_domain
+	);
+
+	// `contributor_remote` might exist from a previous run (not expected for a fresh clone).
+	// If so, delete it so that it can be recreated.
+	if run_cmd(
+		"git",
+		&["remote", "remove", "get-url", contributor_remote],
+		&repo_dir,
+	)
+	.await
+	.is_ok()
+	{
+		run_cmd("git", &["remote", "remove", contributor_remote], &repo_dir)
+			.await?;
+	}
+	run_cmd(
+		"git",
+		&[
+			"remote",
+			"add",
+			&contributor_remote,
+			&contributor_remote_address,
+		],
+		&repo_dir,
+	)
+	.await?;
+
+	let contributor_remote_branch =
+		format!("{}/{}", &contributor_remote, &branch);
+	run_cmd(
+		"git",
+		&["fetch", (&contributor_remote_branch).as_str()],
+		&repo_dir,
+	)
+	.await?;
+
+	// The contributor's branch might exist from a previous run (not expected for a fresh clone).
+	// If so, delete it so that it can be recreated.
+	if run_cmd(
+		"git",
+		&[
+			"show-ref",
+			"--verify",
+			format!("refs/heads/{}", &branch).as_str(),
+		],
+		&repo_dir,
+	)
+	.await
+	.is_ok()
+	{
+		run_cmd("git", &["branch", "-D", &branch], &repo_dir).await?;
+	}
+	run_cmd(
+		"git",
+		&["checkout", "-b", &branch, &contributor_remote_branch],
+		&repo_dir,
+	)
+	.await?;
+
+	let owner_remote_branch = "origin/master";
+	run_cmd("git", &["fetch", &owner_remote_branch], &repo_dir).await?;
+
+	// Create master merge commit before updating packages
+	let master_merge_result = run_cmd(
+		"git",
+		&["merge", owner_remote_branch, "--no-ff", "--no-edit"],
+		&repo_dir,
 	)
 	.await;
-	// checkout origin master
-	log::info!("Checking out master.");
-	Command::new("git")
-		.arg("checkout")
-		.arg("master")
-		.current_dir(format!("./{}", base_repo))
-		.spawn()
-		.context(Tokio)?
-		.await
-		.context(Tokio)?;
-	// delete temp branch
-	log::info!("Deleting head branch.");
-	Command::new("git")
-		.arg("branch")
-		.arg("-D")
-		.arg(format!("{}", branch))
-		.current_dir(format!("./{}", base_repo))
-		.spawn()
-		.context(Tokio)?
-		.await
-		.context(Tokio)?;
-	// remove temp remote
-	log::info!("Removing temp remote.");
-	Command::new("git")
-		.arg("remote")
-		.arg("remove")
-		.arg("temp")
-		.current_dir(format!("./{}", base_repo))
-		.spawn()
-		.context(Tokio)?
-		.await
-		.context(Tokio)?;
-	res
-}
-
-async fn companion_update_inner(
-	github_bot: &GithubBot,
-	base_owner: &str,
-	base_repo: &str,
-	head_owner: &str,
-	head_repo: &str,
-	branch: &str,
-) -> Result<Option<String>> {
-	let token = github_bot.client.auth_key().await?;
-	let mut updated_sha = None;
-	// clone in case the local clone doesn't exist
-	log::info!("Cloning repo.");
-	Command::new("git")
-		.arg("clone")
-		.arg("-v")
-		.arg(format!(
-			"https://x-access-token:{token}@github.com/{owner}/{repo}.git",
-			token = token,
-			owner = base_owner,
-			repo = base_repo,
-		))
-		.spawn()
-		.context(Tokio)?
-		.await
-		.context(Tokio)?;
-	// add temp remote
-	log::info!("Adding temp remote.");
-	Command::new("git")
-		.arg("remote")
-		.arg("add")
-		.arg("temp")
-		.arg(format!(
-			"https://x-access-token:{token}@github.com/{owner}/{repo}.git",
-			token = token,
-			owner = head_owner,
-			repo = head_repo,
-		))
-		.current_dir(format!("./{}", base_repo))
-		.spawn()
-		.context(Tokio)?
-		.await
-		.context(Tokio)?;
-	// fetch temp
-	log::info!("Fetching temp.");
-	Command::new("git")
-		.arg("fetch")
-		.arg("temp")
-		.current_dir(format!("./{}", base_repo))
-		.spawn()
-		.context(Tokio)?
-		.await
-		.context(Tokio)?;
-	// checkout temp branch
-	log::info!("Checking out head branch.");
-	let checkout = Command::new("git")
-		.arg("checkout")
-		.arg("-b")
-		.arg(format!("{}", branch))
-		.arg(format!("temp/{}", branch))
-		.current_dir(format!("./{}", base_repo))
-		.spawn()
-		.context(Tokio)?
-		.await
-		.context(Tokio)?;
-	if checkout.success() {
-		// merge origin master
-		log::info!("Merging master.");
-		let merge_master = Command::new("git")
-			.arg("merge")
-			.arg("origin/master")
-			.arg("--no-ff")
-			.arg("--no-edit")
-			.current_dir(format!("./{}", base_repo))
-			.spawn()
-			.context(Tokio)?
-			.await
-			.context(Tokio)?;
-		if merge_master.success() {
-			// update
-			log::info!("Updating substrate.");
-			Command::new("cargo")
-				.arg("update")
-				.arg("-vp")
-				.arg("sp-io")
-				.current_dir(format!("./{}", base_repo))
-				.spawn()
-				.context(Tokio)?
-				.await
-				.context(Tokio)?;
-			// commit
-			log::info!("Committing changes.");
-			Command::new("git")
-				.arg("commit")
-				.arg("-am")
-				.arg("\"Update Substrate\"")
-				.current_dir(format!("./{}", base_repo))
-				.spawn()
-				.context(Tokio)?
-				.await
-				.context(Tokio)?;
-			// push
-			log::info!("Pushing changes.");
-			Command::new("git")
-				.arg("push")
-				.arg("temp")
-				.arg(format!("{}", branch))
-				.current_dir(format!("./{}", base_repo))
-				.spawn()
-				.context(Tokio)?
-				.await
-				.context(Tokio)?;
-			// rev-parse
-			log::info!("Parsing SHA.");
-			let output = Command::new("git")
-				.arg("rev-parse")
-				.arg("HEAD")
-				.current_dir(format!("./{}", base_repo))
-				.output()
-				.await
-				.context(Tokio)?;
-			updated_sha = Some(
-				String::from_utf8(output.stdout)
-					.context(Utf8)?
-					.trim()
-					.to_string(),
-			);
-		} else {
-			// abort merge
-			log::info!("Aborting merge.");
-			Command::new("git")
-				.arg("merge")
-				.arg("--abort")
-				.current_dir(format!("./{}", base_repo))
-				.spawn()
-				.context(Tokio)?
-				.await
-				.context(Tokio)?;
-		}
+	if let Err(e) = master_merge_result {
+		log::info!("Aborting companion update due to master merge failure");
+		run_cmd("git", &["merge", "--abort"], &repo_dir).await?;
+		return Err(e);
 	}
+
+	// `cargo update` should normally make changes to the lockfile with the latest SHAs from Github
+	run_cmd("cargo", &["update", "-vp", "sp-io"], &repo_dir).await?;
+
+	// Check if `cargo update` resulted in any changes. If the master merge commit already had the
+	// latest lockfile then no changes might have been made.
+	let changes_after_update_output =
+		run_cmd_with_output("git", &["status", "--short"], &repo_dir).await?;
+	if String::from_utf8_lossy(&(&changes_after_update_output).stdout[..])
+		.trim()
+		.is_empty()
+	{
+		run_cmd("git", &["commit", "-am", "update Substrate"], &repo_dir)
+			.await?;
+	}
+
+	run_cmd("git", &["push", &contributor_remote, &branch], &repo_dir).await?;
+
+	log::info!(
+		"Getting the head SHA after a companion update in {}",
+		contributor_remote_branch
+	);
+	let updated_sha_output =
+		run_cmd_with_output("git", &["rev-parse", "HEAD"], &repo_dir).await?;
+	let updated_sha = String::from_utf8(updated_sha_output.stdout)
+		.context(Utf8)?
+		.trim()
+		.to_string();
+
 	Ok(updated_sha)
 }
 
