@@ -1,5 +1,4 @@
 ---
-# Ingress for the webhook
 apiVersion: extensions/v1beta1
 kind: Ingress
 metadata:
@@ -8,8 +7,11 @@ metadata:
   labels:
     app: parity-processbot
   annotations:
-    kubernetes.io/ingress.class: traefik
-    traefik.frontend.entryPoints: "https,http"
+    cert-manager.io/cluster-issuer: letsencrypt-http01
+    external-dns.alpha.kubernetes.io/target: traefik-external.parity-stg.parity.io.
+    kubernetes.io/ingress.class: traefik-external
+    traefik.ingress.kubernetes.io/router.entrypoints: web,websecure
+    traefik.ingress.kubernetes.io/router.tls: "true"
 spec:
   rules:
   - host: {{ .Values.ingressDomain }}
@@ -19,3 +21,7 @@ spec:
         backend:
           serviceName: parity-processbot
           servicePort: {{ .Values.processbot.config.WEBHOOK_PORT }}
+  tls:
+  - hosts:
+    - {{ .Values.ingressDomain }}
+    secretName: {{ .Values.ingressDomain }}
