@@ -29,7 +29,7 @@ pub async fn companion_update(
 			"git",
 			&["clone", "-v", &owner_remote_address],
 			// Can't be logged directly because the access token is included in the remote address
-			CommandLogging::SubstituteFor(CommandLoggingMessages {
+			CommandMessage::SubstituteFor(CommandMessages {
 				before_cmd: format!("Cloning {}", owner_repository_domain),
 				on_failure: format!(
 					"Failed to clone {}",
@@ -55,7 +55,7 @@ pub async fn companion_update(
 		"git",
 		&["remote", "get-url", contributor],
 		&repo_dir,
-		CommandLogging::Enabled,
+		CommandMessage::Enabled,
 	)
 	.await
 	.is_ok()
@@ -64,7 +64,7 @@ pub async fn companion_update(
 			"git",
 			&["remote", "remove", contributor],
 			&repo_dir,
-			CommandLogging::Enabled,
+			CommandMessage::Enabled,
 		)
 		.await?;
 	}
@@ -73,7 +73,7 @@ pub async fn companion_update(
 		&["remote", "add", contributor, &contributor_remote_address],
 		&repo_dir,
 		// Can't be logged directly because the access token is included in the remote address
-		CommandLogging::SubstituteFor(CommandLoggingMessages {
+		CommandMessage::SubstituteFor(CommandMessages {
 			before_cmd: format!(
 				"Adding remote for {}",
 				contributor_repository_domain
@@ -90,7 +90,7 @@ pub async fn companion_update(
 		"git",
 		&["fetch", contributor, contributor_branch],
 		&repo_dir,
-		CommandLogging::Enabled,
+		CommandMessage::Enabled,
 	)
 	.await?;
 
@@ -100,7 +100,7 @@ pub async fn companion_update(
 		"git",
 		&["show-branch", contributor_branch],
 		&repo_dir,
-		CommandLogging::Enabled,
+		CommandMessage::Enabled,
 	)
 	.await
 	.is_ok()
@@ -109,7 +109,7 @@ pub async fn companion_update(
 			"git",
 			&["branch", "-D", contributor_branch],
 			&repo_dir,
-			CommandLogging::Enabled,
+			CommandMessage::Enabled,
 		)
 		.await?;
 	}
@@ -117,7 +117,7 @@ pub async fn companion_update(
 		"git",
 		&["checkout", "--track", &contributor_remote_branch],
 		&repo_dir,
-		CommandLogging::Enabled,
+		CommandMessage::Enabled,
 	)
 	.await?;
 
@@ -129,7 +129,7 @@ pub async fn companion_update(
 		"git",
 		&["fetch", owner_remote, owner_branch],
 		&repo_dir,
-		CommandLogging::Enabled,
+		CommandMessage::Enabled,
 	)
 	.await?;
 
@@ -138,7 +138,7 @@ pub async fn companion_update(
 		"git",
 		&["merge", &owner_remote_branch, "--no-ff", "--no-edit"],
 		&repo_dir,
-		CommandLogging::Enabled,
+		CommandMessage::Enabled,
 	)
 	.await;
 	if let Err(e) = master_merge_result {
@@ -147,7 +147,7 @@ pub async fn companion_update(
 			"git",
 			&["merge", "--abort"],
 			&repo_dir,
-			CommandLogging::Enabled,
+			CommandMessage::Enabled,
 		)
 		.await?;
 		return Err(e);
@@ -158,7 +158,7 @@ pub async fn companion_update(
 		"cargo",
 		&["update", "-vp", "sp-io"],
 		&repo_dir,
-		CommandLogging::Enabled,
+		CommandMessage::Enabled,
 	)
 	.await?;
 
@@ -168,7 +168,7 @@ pub async fn companion_update(
 		"git",
 		&["status", "--short"],
 		&repo_dir,
-		CommandLogging::Enabled,
+		CommandMessage::Enabled,
 	)
 	.await?;
 	if String::from_utf8_lossy(&(&changes_after_update_output).stdout[..])
@@ -179,7 +179,7 @@ pub async fn companion_update(
 			"git",
 			&["commit", "-am", "update Substrate"],
 			&repo_dir,
-			CommandLogging::Enabled,
+			CommandMessage::Enabled,
 		)
 		.await?;
 	}
@@ -188,7 +188,7 @@ pub async fn companion_update(
 		"git",
 		&["push", contributor, contributor_branch],
 		&repo_dir,
-		CommandLogging::Enabled,
+		CommandMessage::Enabled,
 	)
 	.await?;
 
@@ -200,7 +200,7 @@ pub async fn companion_update(
 		"git",
 		&["rev-parse", "HEAD"],
 		&repo_dir,
-		CommandLogging::Enabled,
+		CommandMessage::Enabled,
 	)
 	.await?;
 	let updated_sha = String::from_utf8(updated_sha_output.stdout)

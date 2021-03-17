@@ -7,22 +7,22 @@ use std::process::{Output, Stdio};
 use tokio::process::Command;
 
 #[derive(PartialEq)]
-pub struct CommandLoggingMessages {
+pub struct CommandMessages {
 	pub before_cmd: String,
 	pub on_failure: String,
 }
 
 #[derive(PartialEq)]
-pub enum CommandLogging {
+pub enum CommandMessage {
 	Enabled,
-	SubstituteFor(CommandLoggingMessages),
+	SubstituteFor(CommandMessages),
 }
 
 pub async fn run_cmd<Cmd, Dir>(
 	cmd: Cmd,
 	args: &[&str],
 	dir: Dir,
-	logging: CommandLogging,
+	logging: CommandMessage,
 ) -> Result<Output>
 where
 	Cmd: AsRef<OsStr> + Display,
@@ -41,7 +41,7 @@ where
 pub async fn run_cmd_in_cwd<Cmd>(
 	cmd: Cmd,
 	args: &[&str],
-	logging: CommandLogging,
+	logging: CommandMessage,
 ) -> Result<Output>
 where
 	Cmd: AsRef<OsStr> + Display,
@@ -60,7 +60,7 @@ pub async fn run_cmd_with_output<Cmd, Dir>(
 	cmd: Cmd,
 	args: &[&str],
 	dir: Dir,
-	logging: CommandLogging,
+	logging: CommandMessage,
 ) -> Result<Output>
 where
 	Cmd: AsRef<OsStr> + Display,
@@ -84,22 +84,21 @@ fn before_cmd<Cmd, Dir>(
 	cmd: Cmd,
 	args: &[&str],
 	dir: Option<Dir>,
-	logging: &CommandLogging,
+	logging: &CommandMessage,
 ) where
 	Cmd: AsRef<OsStr> + Display,
 	Dir: AsRef<Path> + Display,
 {
 	match logging {
-		CommandLogging::Enabled => {
+		CommandMessage::Enabled => {
 			if let Some(dir) = dir {
 				log::info!("Run {} {:?} in {}", cmd, args, dir);
 			} else {
 				log::info!("Run {} {:?} in the current directory", cmd, args);
 			}
 		}
-		CommandLogging::SubstituteFor(CommandLoggingMessages {
-			before_cmd,
-			..
+		CommandMessage::SubstituteFor(CommandMessages {
+			before_cmd, ..
 		}) => {
 			log::info!("{}", before_cmd);
 		}
@@ -109,18 +108,18 @@ fn before_cmd<Cmd, Dir>(
 fn handle_cmd_result(
 	cmd: &mut Command,
 	result: Output,
-	logging: &CommandLogging,
+	logging: &CommandMessage,
 ) -> Result<Output> {
 	if result.status.success() {
 		Ok(result)
 	} else {
 		let err_msg = match logging {
-			CommandLogging::Enabled => {
+			CommandMessage::Enabled => {
 				let err_output = String::from_utf8_lossy(&result.stderr);
 				log::info!("{}", err_output);
 				err_output.to_string()
 			}
-			CommandLogging::SubstituteFor(CommandLoggingMessages {
+			CommandMessage::SubstituteFor(CommandMessages {
 				on_failure,
 				..
 			}) => {
