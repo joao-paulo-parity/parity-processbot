@@ -28,40 +28,33 @@ pub async fn companion_update(
 		run_cmd_in_cwd("git", &["clone", "-v", &owner_remote_address]).await?;
 	}
 
-	let contributor_remote = "contributor";
 	let contributor_repository_domain =
 		format!("github.com/{}/{}.git", contributor, contributor_repo);
 	let contributor_remote_branch =
-		format!("{}/{}", contributor_remote, contributor_branch);
+		format!("{}/{}", contributor, contributor_branch);
 	let contributor_remote_address = format!(
 		"https://x-access-token:{}@{}",
 		token, contributor_repository_domain
 	);
 
-	// `contributor_remote` might exist from a previous run (not expected for a fresh clone).
-	// If so, delete it so that it can be recreated.
-	if run_cmd("git", &["remote", "get-url", contributor_remote], &repo_dir)
+	// The contributor's remote entry might exist from a previous run (not expected for a fresh
+	// clone). If so, delete it so that it can be recreated.
+	if run_cmd("git", &["remote", "get-url", contributor], &repo_dir)
 		.await
 		.is_ok()
 	{
-		run_cmd("git", &["remote", "remove", contributor_remote], &repo_dir)
-			.await?;
+		run_cmd("git", &["remote", "remove", contributor], &repo_dir).await?;
 	}
 	run_cmd(
 		"git",
-		&[
-			"remote",
-			"add",
-			contributor_remote,
-			&contributor_remote_address,
-		],
+		&["remote", "add", contributor, &contributor_remote_address],
 		&repo_dir,
 	)
 	.await?;
 
 	run_cmd(
 		"git",
-		&["fetch", &contributor_remote, contributor_branch],
+		&["fetch", contributor, contributor_branch],
 		&repo_dir,
 	)
 	.await?;
@@ -85,12 +78,7 @@ pub async fn companion_update(
 	}
 	run_cmd(
 		"git",
-		&[
-			"checkout",
-			"-b",
-			contributor_branch,
-			&contributor_remote_branch,
-		],
+		&["checkout", "--track", &contributor_remote_branch],
 		&repo_dir,
 	)
 	.await?;
@@ -129,16 +117,12 @@ pub async fn companion_update(
 			.await?;
 	}
 
-	run_cmd(
-		"git",
-		&["push", contributor_remote, contributor_branch],
-		&repo_dir,
-	)
-	.await?;
+	run_cmd("git", &["push", contributor, contributor_branch], &repo_dir)
+		.await?;
 
 	log::info!(
 		"Getting the head SHA after a companion update in {}",
-		contributor_remote_branch
+		&contributor_remote_branch
 	);
 	let updated_sha_output =
 		run_cmd_with_output("git", &["rev-parse", "HEAD"], &repo_dir).await?;
