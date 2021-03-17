@@ -15,6 +15,7 @@ pub struct CommandMessages {
 #[derive(PartialEq)]
 pub enum CommandMessage {
 	Enabled,
+	EnabledWithErrorsSilenced,
 	SubstituteFor(CommandMessages),
 }
 
@@ -90,7 +91,7 @@ fn cmd_display<Cmd, Dir>(
 	Dir: AsRef<Path> + Display,
 {
 	match logging {
-		CommandMessage::Enabled => {
+		CommandMessage::Enabled | CommandMessage::EnabledWithErrorsSilenced => {
 			if let Some(dir) = dir {
 				log::info!("Run {} {:?} in {}", cmd, args, dir);
 			} else {
@@ -136,6 +137,7 @@ fn handle_cmd_result(
 					None
 				}
 			}
+			_ => None,
 		};
 
 		let cmd_display = match logging {

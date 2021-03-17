@@ -58,7 +58,7 @@ pub async fn companion_update(
 		"git",
 		&["remote", "get-url", contributor],
 		&repo_dir,
-		CommandMessage::Enabled,
+		CommandMessage::EnabledWithErrorsSilenced,
 	)
 	.await
 	.is_ok()
@@ -103,7 +103,7 @@ pub async fn companion_update(
 		"git",
 		&["show-branch", contributor_branch],
 		&repo_dir,
-		CommandMessage::Enabled,
+		CommandMessage::EnabledWithErrorsSilenced,
 	)
 	.await
 	.is_ok()
@@ -175,7 +175,7 @@ pub async fn companion_update(
 		CommandMessage::Enabled,
 	)
 	.await?;
-	if String::from_utf8_lossy(&(&changes_after_update_output).stdout[..])
+	if !String::from_utf8_lossy(&(&changes_after_update_output).stdout[..])
 		.trim()
 		.is_empty()
 	{
