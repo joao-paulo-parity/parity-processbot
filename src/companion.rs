@@ -10,7 +10,7 @@ pub async fn companion_update(
 	owner_repo: &str,
 	contributor: &str,
 	contributor_repo: &str,
-	branch: &str,
+	contributor_branch: &str,
 ) -> Result<String> {
 	let token = github_bot.client.auth_key().await?;
 
@@ -25,16 +25,14 @@ pub async fn companion_update(
 	if Path::new(&repo_dir).exists() {
 		log::info!("{} is already cloned; skipping", owner_repository_domain);
 	} else {
-		run_cmd_in_cwd(
-			"git",
-			&["clone", "-v", (&owner_remote_address).as_str()],
-		)
-		.await?;
+		run_cmd_in_cwd("git", &["clone", "-v", &owner_remote_address]).await?;
 	}
 
 	let contributor_remote = "contributor";
 	let contributor_repository_domain =
 		format!("github.com/{}/{}.git", contributor, contributor_repo);
+	let contributor_remote_branch =
+		format!("{}/{}", contributor_remote, contributor_branch);
 	let contributor_remote_address = format!(
 		"https://x-access-token:{}@{}",
 		token, contributor_repository_domain
@@ -42,13 +40,9 @@ pub async fn companion_update(
 
 	// `contributor_remote` might exist from a previous run (not expected for a fresh clone).
 	// If so, delete it so that it can be recreated.
-	if run_cmd(
-		"git",
-		&["remote", "remove", "get-url", contributor_remote],
-		&repo_dir,
-	)
-	.await
-	.is_ok()
+	if run_cmd("git", &["remote", "get-url", contributor_remote], &repo_dir)
+		.await
+		.is_ok()
 	{
 		run_cmd("git", &["remote", "remove", contributor_remote], &repo_dir)
 			.await?;
@@ -58,18 +52,16 @@ pub async fn companion_update(
 		&[
 			"remote",
 			"add",
-			&contributor_remote,
+			contributor_remote,
 			&contributor_remote_address,
 		],
 		&repo_dir,
 	)
 	.await?;
 
-	let contributor_remote_branch =
-		format!("{}/{}", &contributor_remote, &branch);
 	run_cmd(
 		"git",
-		&["fetch", (&contributor_remote_branch).as_str()],
+		&["fetch", &contributor_remote, contributor_branch],
 		&repo_dir,
 	)
 	.await?;
@@ -81,29 +73,38 @@ pub async fn companion_update(
 		&[
 			"show-ref",
 			"--verify",
-			format!("refs/heads/{}", &branch).as_str(),
+			&format!("refs/heads/{}", contributor_branch),
 		],
 		&repo_dir,
 	)
 	.await
 	.is_ok()
 	{
-		run_cmd("git", &["branch", "-D", &branch], &repo_dir).await?;
+		run_cmd("git", &["branch", "-D", contributor_branch], &repo_dir)
+			.await?;
 	}
 	run_cmd(
 		"git",
-		&["checkout", "-b", &branch, &contributor_remote_branch],
+		&[
+			"checkout",
+			"-b",
+			contributor_branch,
+			&contributor_remote_branch,
+		],
 		&repo_dir,
 	)
 	.await?;
 
-	let owner_remote_branch = "origin/master";
-	run_cmd("git", &["fetch", &owner_remote_branch], &repo_dir).await?;
+	let owner_remote = "origin";
+	let owner_branch = "master";
+	let owner_remote_branch = format!("{}/{}", owner_remote, owner_branch);
+
+	run_cmd("git", &["fetch", owner_remote, owner_branch], &repo_dir).await?;
 
 	// Create master merge commit before updating packages
 	let master_merge_result = run_cmd(
 		"git",
-		&["merge", owner_remote_branch, "--no-ff", "--no-edit"],
+		&["merge", &owner_remote_branch, "--no-ff", "--no-edit"],
 		&repo_dir,
 	)
 	.await;
@@ -128,7 +129,12 @@ pub async fn companion_update(
 			.await?;
 	}
 
-	run_cmd("git", &["push", &contributor_remote, &branch], &repo_dir).await?;
+	run_cmd(
+		"git",
+		&["push", contributor_remote, contributor_branch],
+		&repo_dir,
+	)
+	.await?;
 
 	log::info!(
 		"Getting the head SHA after a companion update in {}",

@@ -1289,10 +1289,12 @@ async fn update_companion(
 									&comp_repo,
 									comp_number,
 									format!(
-										"Failed update with error:
-                                        ```
-                                        {}
-                                        ```",
+										"
+Failed update with error:
+```
+{}
+```
+",
 										&err_str
 									)
 									.as_str(),
