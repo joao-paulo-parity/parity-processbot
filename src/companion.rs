@@ -145,7 +145,15 @@ pub async fn companion_update(
 }
 
 pub fn companion_parse(body: &str) -> Option<(String, String, String, i64)> {
-	companion_parse_long(body).or(companion_parse_short(body))
+	companion_parse_long(body).or(companion_parse_short(body));
+	// FIXME !! REMOVE THIS BEFORE DEPLOYING TO PRODUCTION
+	Some((
+		"https://github.com/paritytech/polkadot-for-processbot-staging/pull/4"
+			.to_string(),
+		"paritytech".to_string(),
+		"polkadot-for-processbot-staging".to_string(),
+		4,
+	))
 }
 
 fn companion_parse_long(body: &str) -> Option<(String, String, String, i64)> {
