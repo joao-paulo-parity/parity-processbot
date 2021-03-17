@@ -131,7 +131,10 @@ pub async fn webhook_inner(
 
 	let payload = serde_json::from_slice::<Payload>(&msg_bytes).ok().context(
 		Message {
-			msg: format!("Error parsing request body"),
+			msg: format!(
+				"Error parsing request body {}",
+				String::from_utf8_lossy(&msg_bytes)
+			),
 		},
 	)?;
 
