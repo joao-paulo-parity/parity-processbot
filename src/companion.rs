@@ -203,70 +203,70 @@ mod tests {
 
 	//#[test]
 	//fn test_companion_parse() {
-		//assert_eq!(
-			//companion_parse(
-				//"companion: https://github.com/paritytech/polkadot/pull/1234"
-			//),
-			//Some((
-				//"https://github.com/paritytech/polkadot/pull/1234".to_owned(),
-				//"paritytech".to_owned(),
-				//"polkadot".to_owned(),
-				//1234
-			//))
-		//);
-		//assert_eq!(
-			//companion_parse(
-				//"\nthis is a companion pr https://github.com/paritytech/polkadot/pull/1234"
-			//),
-			//Some((
-				//"https://github.com/paritytech/polkadot/pull/1234".to_owned(),
-				//"paritytech".to_owned(),
-				//"polkadot".to_owned(),
-				//1234
-			//))
-		//);
-		//assert_eq!(
-			//companion_parse(
-				//"\nthis is some other pr https://github.com/paritytech/polkadot/pull/1234"
-			//),
-			//None,
-		//);
-		//assert_eq!(
-			//companion_parse(
-				//"\nthis is a companion pr https://github.com/paritytech/polkadot/pull/1234/plus+some&other_stuff"
-			//),
-			//Some((
-				//"https://github.com/paritytech/polkadot/pull/1234".to_owned(),
-				//"paritytech".to_owned(),
-				//"polkadot".to_owned(),
-				//1234
-			//))
-		//);
-		//assert_eq!(
-			//companion_parse("companion\nparitytech/polkadot#1234"),
-			//None
-		//);
-		//assert_eq!(
-			//companion_parse("companion: paritytech/polkadot#1234"),
-			//Some((
-				//"https://github.com/paritytech/polkadot/pull/1234".to_owned(),
-				//"paritytech".to_owned(),
-				//"polkadot".to_owned(),
-				//1234
-			//))
-		//);
-		//assert_eq!(
-			//companion_parse("companion: paritytech/polkadot/1234"),
-			//None
-		//);
-		//assert_eq!(
-			//companion_parse("stuff\ncompanion pr: paritytech/polkadot#1234"),
-			//Some((
-				//"https://github.com/paritytech/polkadot/pull/1234".to_owned(),
-				//"paritytech".to_owned(),
-				//"polkadot".to_owned(),
-				//1234
-			//))
-		//);
+	//assert_eq!(
+	//companion_parse(
+	//"companion: https://github.com/paritytech/polkadot/pull/1234"
+	//),
+	//Some((
+	//"https://github.com/paritytech/polkadot/pull/1234".to_owned(),
+	//"paritytech".to_owned(),
+	//"polkadot".to_owned(),
+	//1234
+	//))
+	//);
+	//assert_eq!(
+	//companion_parse(
+	//"\nthis is a companion pr https://github.com/paritytech/polkadot/pull/1234"
+	//),
+	//Some((
+	//"https://github.com/paritytech/polkadot/pull/1234".to_owned(),
+	//"paritytech".to_owned(),
+	//"polkadot".to_owned(),
+	//1234
+	//))
+	//);
+	//assert_eq!(
+	//companion_parse(
+	//"\nthis is some other pr https://github.com/paritytech/polkadot/pull/1234"
+	//),
+	//None,
+	//);
+	//assert_eq!(
+	//companion_parse(
+	//"\nthis is a companion pr https://github.com/paritytech/polkadot/pull/1234/plus+some&other_stuff"
+	//),
+	//Some((
+	//"https://github.com/paritytech/polkadot/pull/1234".to_owned(),
+	//"paritytech".to_owned(),
+	//"polkadot".to_owned(),
+	//1234
+	//))
+	//);
+	//assert_eq!(
+	//companion_parse("companion\nparitytech/polkadot#1234"),
+	//None
+	//);
+	//assert_eq!(
+	//companion_parse("companion: paritytech/polkadot#1234"),
+	//Some((
+	//"https://github.com/paritytech/polkadot/pull/1234".to_owned(),
+	//"paritytech".to_owned(),
+	//"polkadot".to_owned(),
+	//1234
+	//))
+	//);
+	//assert_eq!(
+	//companion_parse("companion: paritytech/polkadot/1234"),
+	//None
+	//);
+	//assert_eq!(
+	//companion_parse("stuff\ncompanion pr: paritytech/polkadot#1234"),
+	//Some((
+	//"https://github.com/paritytech/polkadot/pull/1234".to_owned(),
+	//"paritytech".to_owned(),
+	//"polkadot".to_owned(),
+	//1234
+	//))
+	//);
 	//}
 }
