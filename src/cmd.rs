@@ -8,8 +8,8 @@ use tokio::process::Command;
 
 #[derive(PartialEq)]
 pub struct CommandMessages {
-	pub before_cmd: String,
-	pub on_failure: String,
+	pub cmd_display: Option<String>,
+	pub on_failure: Option<String>,
 }
 
 #[derive(PartialEq)]
@@ -28,7 +28,7 @@ where
 	Cmd: AsRef<OsStr> + Display,
 	Dir: AsRef<Path> + Display,
 {
-	before_cmd(&cmd, args, Some(&dir), &logging);
+	cmd_display(&cmd, args, Some(&dir), &logging);
 
 	#[allow(unused_mut)]
 	let mut init_cmd = Command::new(cmd);
@@ -46,7 +46,7 @@ pub async fn run_cmd_in_cwd<Cmd>(
 where
 	Cmd: AsRef<OsStr> + Display,
 {
-	before_cmd::<&Cmd, String>(&cmd, args, None, &logging);
+	cmd_display::<&Cmd, String>(&cmd, args, None, &logging);
 
 	#[allow(unused_mut)]
 	let mut init_cmd = Command::new(cmd);
@@ -66,7 +66,7 @@ where
 	Cmd: AsRef<OsStr> + Display,
 	Dir: AsRef<Path> + Display,
 {
-	before_cmd(&cmd, args, Some(&dir), &logging);
+	cmd_display(&cmd, args, Some(&dir), &logging);
 
 	#[allow(unused_mut)]
 	let mut init_cmd = Command::new(cmd);
@@ -80,7 +80,7 @@ where
 	handle_cmd_result(cmd, result, &logging)
 }
 
-fn before_cmd<Cmd, Dir>(
+fn cmd_display<Cmd, Dir>(
 	cmd: Cmd,
 	args: &[&str],
 	dir: Option<Dir>,
@@ -98,9 +98,11 @@ fn before_cmd<Cmd, Dir>(
 			}
 		}
 		CommandMessage::SubstituteFor(CommandMessages {
-			before_cmd, ..
+			cmd_display, ..
 		}) => {
-			log::info!("{}", before_cmd);
+			if let Some(cmd_display) = cmd_display {
+				log::info!("{}", cmd_display);
+			}
 		}
 	};
 }
@@ -116,22 +118,39 @@ fn handle_cmd_result(
 		let err_msg = match logging {
 			CommandMessage::Enabled => {
 				let err_output = String::from_utf8_lossy(&result.stderr);
-				log::info!("{}", err_output);
-				err_output.to_string()
+				if err_output.is_empty() {
+					None
+				} else {
+					log::error!("{}", err_output);
+					Some(err_output.to_string())
+				}
 			}
 			CommandMessage::SubstituteFor(CommandMessages {
 				on_failure,
 				..
 			}) => {
-				log::info!("{}", on_failure);
-				on_failure.to_string()
+				if let Some(on_failure) = on_failure {
+					log::error!("{}", on_failure);
+					Some(on_failure.to_string())
+				} else {
+					None
+				}
 			}
 		};
 
+		let cmd_display = match logging {
+			CommandMessage::SubstituteFor(CommandMessages {
+				cmd_display,
+				..
+			}) => cmd_display.as_ref().map(|display| display.to_string()),
+			_ => None,
+		}
+		.unwrap_or_else(|| format!("{:?}", cmd));
+
 		Err(Error::CommandFailed {
-			cmd: format!("{:?}", cmd),
+			cmd: cmd_display,
 			status_code: result.status.code(),
-			err: err_msg,
+			err: err_msg.unwrap_or_else(|| "no output".to_string()),
 		})
 	}
 }

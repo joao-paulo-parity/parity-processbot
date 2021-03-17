@@ -30,11 +30,14 @@ pub async fn companion_update(
 			&["clone", "-v", &owner_remote_address],
 			// Can't be logged directly because the access token is included in the remote address
 			CommandMessage::SubstituteFor(CommandMessages {
-				before_cmd: format!("Cloning {}", owner_repository_domain),
-				on_failure: format!(
+				cmd_display: Some(format!(
+					"git clone https://x-access-token:${{SECRET}}@{}",
+					owner_repository_domain,
+				)),
+				on_failure: Some(format!(
 					"Failed to clone {}",
 					owner_repository_domain
-				),
+				)),
 			}),
 		)
 		.await?;
@@ -74,14 +77,14 @@ pub async fn companion_update(
 		&repo_dir,
 		// Can't be logged directly because the access token is included in the remote address
 		CommandMessage::SubstituteFor(CommandMessages {
-			before_cmd: format!(
-				"Adding remote for {}",
-				contributor_repository_domain
-			),
-			on_failure: format!(
+			cmd_display: Some(format!(
+				"git remote add {} https://x-access-token:${{SECRET}}@{}",
+				contributor, contributor_remote_address,
+			)),
+			on_failure: Some(format!(
 				"Failed to add remote for {}",
 				contributor_repository_domain
-			),
+			)),
 		}),
 	)
 	.await?;
@@ -122,7 +125,8 @@ pub async fn companion_update(
 	.await?;
 
 	let owner_remote = "origin";
-	let owner_branch = "master";
+	// FIXME !! CHANGE THIS BEFORE DEPLOYING TO PRODUCTION
+	let owner_branch = "test";
 	let owner_remote_branch = format!("{}/{}", owner_remote, owner_branch);
 
 	run_cmd(
