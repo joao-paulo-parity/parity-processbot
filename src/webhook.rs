@@ -649,6 +649,9 @@ async fn handle_comment(
 			&pr,
 		)
 		.await;
+	// FIXME !! REMOVE THIS BEFORE DEPLOYING TO PRODUCTION
+	} else if body.to_lowercase().trim() == "bot companion update" {
+		update_companion(github_bot, "substrate", &pr, db).await?;
 	}
 
 	Ok(())
