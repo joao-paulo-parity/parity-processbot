@@ -2,7 +2,7 @@ use regex::Regex;
 use snafu::ResultExt;
 use std::path::Path;
 
-use crate::{error::*, github_bot::GithubBot, utils::*, Result};
+use crate::{cmd::*, error::*, github_bot::GithubBot, Result};
 
 pub async fn companion_update(
 	github_bot: &GithubBot,
@@ -25,7 +25,19 @@ pub async fn companion_update(
 	if Path::new(&repo_dir).exists() {
 		log::info!("{} is already cloned; skipping", owner_repository_domain);
 	} else {
-		run_cmd_in_cwd("git", &["clone", "-v", &owner_remote_address]).await?;
+		run_cmd_in_cwd(
+			"git",
+			&["clone", "-v", &owner_remote_address],
+			// Can't be logged directly because the access token is included in the remote address
+			CommandLogging::SubstituteFor(CommandLoggingMessages {
+				before_cmd: format!("Cloning {}", owner_repository_domain),
+				on_failure: format!(
+					"Failed to clone {}",
+					owner_repository_domain
+				),
+			}),
+		)
+		.await?;
 	}
 
 	let contributor_repository_domain =
@@ -39,16 +51,38 @@ pub async fn companion_update(
 
 	// The contributor's remote entry might exist from a previous run (not expected for a fresh
 	// clone). If so, delete it so that it can be recreated.
-	if run_cmd("git", &["remote", "get-url", contributor], &repo_dir)
-		.await
-		.is_ok()
+	if run_cmd(
+		"git",
+		&["remote", "get-url", contributor],
+		&repo_dir,
+		CommandLogging::Enabled,
+	)
+	.await
+	.is_ok()
 	{
-		run_cmd("git", &["remote", "remove", contributor], &repo_dir).await?;
+		run_cmd(
+			"git",
+			&["remote", "remove", contributor],
+			&repo_dir,
+			CommandLogging::Enabled,
+		)
+		.await?;
 	}
 	run_cmd(
 		"git",
 		&["remote", "add", contributor, &contributor_remote_address],
 		&repo_dir,
+		// Can't be logged directly because the access token is included in the remote address
+		CommandLogging::SubstituteFor(CommandLoggingMessages {
+			before_cmd: format!(
+				"Adding remote for {}",
+				contributor_repository_domain
+			),
+			on_failure: format!(
+				"Failed to add remote for {}",
+				contributor_repository_domain
+			),
+		}),
 	)
 	.await?;
 
@@ -56,6 +90,7 @@ pub async fn companion_update(
 		"git",
 		&["fetch", contributor, contributor_branch],
 		&repo_dir,
+		CommandLogging::Enabled,
 	)
 	.await?;
 
@@ -63,23 +98,26 @@ pub async fn companion_update(
 	// If so, delete it so that it can be recreated.
 	if run_cmd(
 		"git",
-		&[
-			"show-ref",
-			"--verify",
-			&format!("refs/heads/{}", contributor_branch),
-		],
+		&["show-branch", contributor_branch],
 		&repo_dir,
+		CommandLogging::Enabled,
 	)
 	.await
 	.is_ok()
 	{
-		run_cmd("git", &["branch", "-D", contributor_branch], &repo_dir)
-			.await?;
+		run_cmd(
+			"git",
+			&["branch", "-D", contributor_branch],
+			&repo_dir,
+			CommandLogging::Enabled,
+		)
+		.await?;
 	}
 	run_cmd(
 		"git",
 		&["checkout", "--track", &contributor_remote_branch],
 		&repo_dir,
+		CommandLogging::Enabled,
 	)
 	.await?;
 
@@ -87,45 +125,84 @@ pub async fn companion_update(
 	let owner_branch = "master";
 	let owner_remote_branch = format!("{}/{}", owner_remote, owner_branch);
 
-	run_cmd("git", &["fetch", owner_remote, owner_branch], &repo_dir).await?;
+	run_cmd(
+		"git",
+		&["fetch", owner_remote, owner_branch],
+		&repo_dir,
+		CommandLogging::Enabled,
+	)
+	.await?;
 
 	// Create master merge commit before updating packages
 	let master_merge_result = run_cmd(
 		"git",
 		&["merge", &owner_remote_branch, "--no-ff", "--no-edit"],
 		&repo_dir,
+		CommandLogging::Enabled,
 	)
 	.await;
 	if let Err(e) = master_merge_result {
 		log::info!("Aborting companion update due to master merge failure");
-		run_cmd("git", &["merge", "--abort"], &repo_dir).await?;
+		run_cmd(
+			"git",
+			&["merge", "--abort"],
+			&repo_dir,
+			CommandLogging::Enabled,
+		)
+		.await?;
 		return Err(e);
 	}
 
 	// `cargo update` should normally make changes to the lockfile with the latest SHAs from Github
-	run_cmd("cargo", &["update", "-vp", "sp-io"], &repo_dir).await?;
+	run_cmd(
+		"cargo",
+		&["update", "-vp", "sp-io"],
+		&repo_dir,
+		CommandLogging::Enabled,
+	)
+	.await?;
 
 	// Check if `cargo update` resulted in any changes. If the master merge commit already had the
 	// latest lockfile then no changes might have been made.
-	let changes_after_update_output =
-		run_cmd_with_output("git", &["status", "--short"], &repo_dir).await?;
+	let changes_after_update_output = run_cmd_with_output(
+		"git",
+		&["status", "--short"],
+		&repo_dir,
+		CommandLogging::Enabled,
+	)
+	.await?;
 	if String::from_utf8_lossy(&(&changes_after_update_output).stdout[..])
 		.trim()
 		.is_empty()
 	{
-		run_cmd("git", &["commit", "-am", "update Substrate"], &repo_dir)
-			.await?;
+		run_cmd(
+			"git",
+			&["commit", "-am", "update Substrate"],
+			&repo_dir,
+			CommandLogging::Enabled,
+		)
+		.await?;
 	}
 
-	run_cmd("git", &["push", contributor, contributor_branch], &repo_dir)
-		.await?;
+	run_cmd(
+		"git",
+		&["push", contributor, contributor_branch],
+		&repo_dir,
+		CommandLogging::Enabled,
+	)
+	.await?;
 
 	log::info!(
 		"Getting the head SHA after a companion update in {}",
 		&contributor_remote_branch
 	);
-	let updated_sha_output =
-		run_cmd_with_output("git", &["rev-parse", "HEAD"], &repo_dir).await?;
+	let updated_sha_output = run_cmd_with_output(
+		"git",
+		&["rev-parse", "HEAD"],
+		&repo_dir,
+		CommandLogging::Enabled,
+	)
+	.await?;
 	let updated_sha = String::from_utf8(updated_sha_output.stdout)
 		.context(Utf8)?
 		.trim()
