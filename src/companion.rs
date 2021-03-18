@@ -126,7 +126,7 @@ pub async fn companion_update(
 
 	let owner_remote = "origin";
 	// FIXME !! CHANGE THIS BEFORE DEPLOYING TO PRODUCTION
-	let owner_branch = contributor_branch;
+	let owner_branch = format!("{}_owner", contributor_branch);
 	let owner_remote_branch = format!("{}/{}", owner_remote, owner_branch);
 
 	run_cmd(
