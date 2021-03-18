@@ -216,20 +216,12 @@ pub async fn companion_update(
 }
 
 pub fn companion_parse(body: &str) -> Option<(String, String, String, i64)> {
-	companion_parse_long(body).or(companion_parse_short(body));
-	// FIXME !! REMOVE THIS BEFORE DEPLOYING TO PRODUCTION
-	Some((
-		"https://github.com/paritytech/polkadot-for-processbot-staging/pull/4"
-			.to_string(),
-		"paritytech".to_string(),
-		"polkadot-for-processbot-staging".to_string(),
-		4,
-	))
+	companion_parse_long(body).or(companion_parse_short(body))
 }
 
 fn companion_parse_long(body: &str) -> Option<(String, String, String, i64)> {
 	let re = Regex::new(
-		r"companion.*(?P<html_url>https://github.com/(?P<owner>[[:alpha:]]+)/(?P<repo>[[:alpha:]]+)/pull/(?P<number>[[:digit:]]+))"
+		r"companion.*(?P<html_url>github.com/(?P<owner>[^/]+)/(?P<repo>[^/]+)/pull/(?P<number>[[:digit:]]+))"
 	)
 	.unwrap();
 	let caps = re.captures(&body)?;
@@ -247,7 +239,7 @@ fn companion_parse_long(body: &str) -> Option<(String, String, String, i64)> {
 
 fn companion_parse_short(body: &str) -> Option<(String, String, String, i64)> {
 	let re = Regex::new(
-		r"companion.*: (?P<owner>[[:alpha:]]+)/(?P<repo>[[:alpha:]]+)#(?P<number>[[:digit:]]+)"
+		r"companion.*(?P<owner>[^/]+)/(?P<repo>[^/]+)#(?P<number>[[:digit:]]+)",
 	)
 	.unwrap();
 	let caps = re.captures(&body)?;
