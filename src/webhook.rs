@@ -1278,10 +1278,11 @@ async fn update_companion(
 						}
 						Err(e) => {
 							let err_str = format!("{}", e);
+							let err_str = err_str.trim();
 							log::info!(
-								"Failed to update {} with error: {}",
+								"Failed companion update in {} with error: {}",
 								comp_html_url,
-								&err_str
+								err_str
 							);
 							github_bot
 								.create_issue_comment(
@@ -1290,7 +1291,8 @@ async fn update_companion(
 									comp_number,
 									format!(
 										"
-Failed update with error:
+Failed companion update:
+
 ```
 {}
 ```
