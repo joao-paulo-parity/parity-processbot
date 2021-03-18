@@ -7,29 +7,27 @@ use std::process::{Output, Stdio};
 use tokio::process::Command;
 
 #[derive(PartialEq)]
-pub struct CommandMessages {
-	pub cmd_display: Option<String>,
-	pub on_failure: Option<String>,
+pub struct CommandMessageConfiguration<'a> {
+	pub secrets_to_hide: Option<&'a [&'a str]>,
+	pub are_errors_silenced: bool,
 }
 
 #[derive(PartialEq)]
-pub enum CommandMessage {
-	Enabled,
-	EnabledWithErrorsSilenced,
-	SubstituteFor(CommandMessages),
+pub enum CommandMessage<'a> {
+	Configured(CommandMessageConfiguration<'a>),
 }
 
-pub async fn run_cmd<Cmd, Dir>(
+pub async fn run_cmd<'a, Cmd, Dir>(
 	cmd: Cmd,
 	args: &[&str],
 	dir: Dir,
-	logging: CommandMessage,
+	logging: CommandMessage<'a>,
 ) -> Result<Output>
 where
 	Cmd: AsRef<OsStr> + Display,
 	Dir: AsRef<Path> + Display,
 {
-	cmd_display(&cmd, args, Some(&dir), &logging);
+	before_cmd(&cmd, args, Some(&dir), &logging);
 
 	#[allow(unused_mut)]
 	let mut init_cmd = Command::new(cmd);
@@ -39,15 +37,15 @@ where
 	handle_cmd_result(cmd, result, &logging)
 }
 
-pub async fn run_cmd_in_cwd<Cmd>(
+pub async fn run_cmd_in_cwd<'a, Cmd>(
 	cmd: Cmd,
 	args: &[&str],
-	logging: CommandMessage,
+	logging: CommandMessage<'a>,
 ) -> Result<Output>
 where
 	Cmd: AsRef<OsStr> + Display,
 {
-	cmd_display::<&Cmd, String>(&cmd, args, None, &logging);
+	before_cmd::<&Cmd, String>(&cmd, args, None, &logging);
 
 	#[allow(unused_mut)]
 	let mut init_cmd = Command::new(cmd);
@@ -57,17 +55,17 @@ where
 	handle_cmd_result(cmd, result, &logging)
 }
 
-pub async fn run_cmd_with_output<Cmd, Dir>(
+pub async fn run_cmd_with_output<'a, Cmd, Dir>(
 	cmd: Cmd,
 	args: &[&str],
 	dir: Dir,
-	logging: CommandMessage,
+	logging: CommandMessage<'a>,
 ) -> Result<Output>
 where
 	Cmd: AsRef<OsStr> + Display,
 	Dir: AsRef<Path> + Display,
 {
-	cmd_display(&cmd, args, Some(&dir), &logging);
+	before_cmd(&cmd, args, Some(&dir), &logging);
 
 	#[allow(unused_mut)]
 	let mut init_cmd = Command::new(cmd);
@@ -81,73 +79,83 @@ where
 	handle_cmd_result(cmd, result, &logging)
 }
 
-fn cmd_display<Cmd, Dir>(
+fn before_cmd<'a, Cmd, Dir>(
 	cmd: Cmd,
 	args: &[&str],
 	dir: Option<Dir>,
-	logging: &CommandMessage,
+	logging: &CommandMessage<'a>,
 ) where
 	Cmd: AsRef<OsStr> + Display,
 	Dir: AsRef<Path> + Display,
 {
 	match logging {
-		CommandMessage::Enabled | CommandMessage::EnabledWithErrorsSilenced => {
-			if let Some(dir) = dir {
-				log::info!("Run {} {:?} in {}", cmd, args, dir);
-			} else {
-				log::info!("Run {} {:?} in the current directory", cmd, args);
-			}
-		}
-		CommandMessage::SubstituteFor(CommandMessages {
-			cmd_display, ..
+		CommandMessage::Configured(CommandMessageConfiguration {
+			secrets_to_hide,
+			..
 		}) => {
-			if let Some(cmd_display) = cmd_display {
-				log::info!("{}", cmd_display);
+			let mut cmd_display = format!("{}", cmd);
+			let mut args_display = format!("{:?}", args);
+			if let Some(secrets) = secrets_to_hide.as_ref() {
+				for secret in secrets.iter() {
+					cmd_display = cmd_display.replace(secret, "${SECRET}");
+					args_display = args_display.replace(secret, "${SECRET}");
+				}
+			}
+
+			if let Some(dir) = dir {
+				log::info!("Run {} {} in {}", cmd_display, args_display, dir);
+			} else {
+				log::info!(
+					"Run {} {} in the current directory",
+					cmd_display,
+					args_display,
+				);
 			}
 		}
 	};
 }
 
-fn handle_cmd_result(
+fn handle_cmd_result<'a>(
 	cmd: &mut Command,
 	result: Output,
-	logging: &CommandMessage,
+	logging: &CommandMessage<'a>,
 ) -> Result<Output> {
 	if result.status.success() {
 		Ok(result)
 	} else {
-		let err_msg = match logging {
-			CommandMessage::Enabled => {
-				let err_output = String::from_utf8_lossy(&result.stderr);
-				if err_output.is_empty() {
-					None
-				} else {
-					log::error!("{}", err_output);
-					Some(err_output.to_string())
-				}
-			}
-			CommandMessage::SubstituteFor(CommandMessages {
-				on_failure,
-				..
+		let (cmd_display, err_msg) = match logging {
+			CommandMessage::Configured(CommandMessageConfiguration {
+				are_errors_silenced,
+				secrets_to_hide,
 			}) => {
-				if let Some(on_failure) = on_failure {
-					log::error!("{}", on_failure);
-					Some(on_failure.to_string())
-				} else {
-					None
+				let mut cmd_display = format!("{:?}", cmd);
+				if let Some(secrets) = secrets_to_hide.as_ref() {
+					for secret in secrets.iter() {
+						cmd_display = cmd_display.replace(secret, "${SECRET}");
+					}
 				}
-			}
-			_ => None,
-		};
+				let err_msg = if *are_errors_silenced {
+					None
+				} else {
+					let err_output = String::from_utf8_lossy(&result.stderr);
+					if err_output.is_empty() {
+						None
+					} else {
+						let mut err_output = err_output.to_string();
+						if let Some(secrets) = secrets_to_hide.as_ref() {
+							for secret in secrets.iter() {
+								err_output =
+									err_output.replace(secret, "${SECRET}");
+							}
+						}
+						log::error!("{}", err_output);
+						Some(err_output)
+					}
+				};
 
-		let cmd_display = match logging {
-			CommandMessage::SubstituteFor(CommandMessages {
-				cmd_display,
-				..
-			}) => cmd_display.as_ref().map(|display| display.to_string()),
-			_ => None,
-		}
-		.unwrap_or_else(|| format!("{:?}", cmd));
+				(cmd_display, err_msg)
+			}
+		};
 
 		Err(Error::CommandFailed {
 			cmd: cmd_display,

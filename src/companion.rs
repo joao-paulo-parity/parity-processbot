@@ -13,6 +13,8 @@ pub async fn companion_update(
 	contributor_branch: &str,
 ) -> Result<String> {
 	let token = github_bot.client.auth_key().await?;
+	let secrets_to_hide = [token.as_str()];
+	let secrets_to_hide = Some(&secrets_to_hide[..]);
 
 	let owner_repository_domain =
 		format!("github.com/{}/{}.git", owner, owner_repo);
@@ -28,16 +30,9 @@ pub async fn companion_update(
 		run_cmd_in_cwd(
 			"git",
 			&["clone", "-v", &owner_remote_address],
-			// Can't be logged directly because the access token is included in the remote address
-			CommandMessage::SubstituteFor(CommandMessages {
-				cmd_display: Some(format!(
-					"git clone https://x-access-token:${{SECRET}}@{}",
-					owner_repository_domain,
-				)),
-				on_failure: Some(format!(
-					"Failed to clone {}",
-					owner_repository_domain
-				)),
+			CommandMessage::Configured(CommandMessageConfiguration {
+				secrets_to_hide,
+				are_errors_silenced: false,
 			}),
 		)
 		.await?;
@@ -58,7 +53,10 @@ pub async fn companion_update(
 		"git",
 		&["remote", "get-url", contributor],
 		&repo_dir,
-		CommandMessage::EnabledWithErrorsSilenced,
+		CommandMessage::Configured(CommandMessageConfiguration {
+			secrets_to_hide,
+			are_errors_silenced: true,
+		}),
 	)
 	.await
 	.is_ok()
@@ -67,7 +65,10 @@ pub async fn companion_update(
 			"git",
 			&["remote", "remove", contributor],
 			&repo_dir,
-			CommandMessage::Enabled,
+			CommandMessage::Configured(CommandMessageConfiguration {
+				secrets_to_hide,
+				are_errors_silenced: false,
+			}),
 		)
 		.await?;
 	}
@@ -75,16 +76,9 @@ pub async fn companion_update(
 		"git",
 		&["remote", "add", contributor, &contributor_remote_address],
 		&repo_dir,
-		// Can't be logged directly because the access token is included in the remote address
-		CommandMessage::SubstituteFor(CommandMessages {
-			cmd_display: Some(format!(
-				"git remote add {} https://x-access-token:${{SECRET}}@{}",
-				contributor, contributor_repository_domain,
-			)),
-			on_failure: Some(format!(
-				"Failed to add remote for {}",
-				contributor_repository_domain
-			)),
+		CommandMessage::Configured(CommandMessageConfiguration {
+			secrets_to_hide,
+			are_errors_silenced: false,
 		}),
 	)
 	.await?;
@@ -93,7 +87,10 @@ pub async fn companion_update(
 		"git",
 		&["fetch", contributor, contributor_branch],
 		&repo_dir,
-		CommandMessage::Enabled,
+		CommandMessage::Configured(CommandMessageConfiguration {
+			secrets_to_hide,
+			are_errors_silenced: false,
+		}),
 	)
 	.await?;
 
@@ -103,7 +100,10 @@ pub async fn companion_update(
 		"git",
 		&["show-branch", contributor_branch],
 		&repo_dir,
-		CommandMessage::EnabledWithErrorsSilenced,
+		CommandMessage::Configured(CommandMessageConfiguration {
+			secrets_to_hide,
+			are_errors_silenced: true,
+		}),
 	)
 	.await
 	.is_ok()
@@ -112,7 +112,10 @@ pub async fn companion_update(
 			"git",
 			&["branch", "-D", contributor_branch],
 			&repo_dir,
-			CommandMessage::Enabled,
+			CommandMessage::Configured(CommandMessageConfiguration {
+				secrets_to_hide,
+				are_errors_silenced: true,
+			}),
 		)
 		.await?;
 	}
@@ -120,7 +123,10 @@ pub async fn companion_update(
 		"git",
 		&["checkout", "--track", &contributor_remote_branch],
 		&repo_dir,
-		CommandMessage::Enabled,
+		CommandMessage::Configured(CommandMessageConfiguration {
+			secrets_to_hide,
+			are_errors_silenced: false,
+		}),
 	)
 	.await?;
 
@@ -133,7 +139,10 @@ pub async fn companion_update(
 		"git",
 		&["fetch", owner_remote, &owner_branch],
 		&repo_dir,
-		CommandMessage::Enabled,
+		CommandMessage::Configured(CommandMessageConfiguration {
+			secrets_to_hide,
+			are_errors_silenced: false,
+		}),
 	)
 	.await?;
 
@@ -142,7 +151,10 @@ pub async fn companion_update(
 		"git",
 		&["merge", &owner_remote_branch, "--no-ff", "--no-edit"],
 		&repo_dir,
-		CommandMessage::Enabled,
+		CommandMessage::Configured(CommandMessageConfiguration {
+			secrets_to_hide,
+			are_errors_silenced: false,
+		}),
 	)
 	.await;
 	if let Err(e) = master_merge_result {
@@ -151,7 +163,10 @@ pub async fn companion_update(
 			"git",
 			&["merge", "--abort"],
 			&repo_dir,
-			CommandMessage::Enabled,
+			CommandMessage::Configured(CommandMessageConfiguration {
+				secrets_to_hide,
+				are_errors_silenced: false,
+			}),
 		)
 		.await?;
 		return Err(e);
@@ -162,7 +177,10 @@ pub async fn companion_update(
 		"cargo",
 		&["update", "-vp", "sp-io"],
 		&repo_dir,
-		CommandMessage::Enabled,
+		CommandMessage::Configured(CommandMessageConfiguration {
+			secrets_to_hide,
+			are_errors_silenced: false,
+		}),
 	)
 	.await?;
 
@@ -172,7 +190,10 @@ pub async fn companion_update(
 		"git",
 		&["status", "--short"],
 		&repo_dir,
-		CommandMessage::Enabled,
+		CommandMessage::Configured(CommandMessageConfiguration {
+			secrets_to_hide,
+			are_errors_silenced: false,
+		}),
 	)
 	.await?;
 	if !String::from_utf8_lossy(&(&changes_after_update_output).stdout[..])
@@ -183,7 +204,10 @@ pub async fn companion_update(
 			"git",
 			&["commit", "-am", "update Substrate"],
 			&repo_dir,
-			CommandMessage::Enabled,
+			CommandMessage::Configured(CommandMessageConfiguration {
+				secrets_to_hide,
+				are_errors_silenced: false,
+			}),
 		)
 		.await?;
 	}
@@ -192,7 +216,10 @@ pub async fn companion_update(
 		"git",
 		&["push", contributor, contributor_branch],
 		&repo_dir,
-		CommandMessage::Enabled,
+		CommandMessage::Configured(CommandMessageConfiguration {
+			secrets_to_hide,
+			are_errors_silenced: false,
+		}),
 	)
 	.await?;
 
@@ -204,7 +231,10 @@ pub async fn companion_update(
 		"git",
 		&["rev-parse", "HEAD"],
 		&repo_dir,
-		CommandMessage::Enabled,
+		CommandMessage::Configured(CommandMessageConfiguration {
+			secrets_to_hide,
+			are_errors_silenced: false,
+		}),
 	)
 	.await?;
 	let updated_sha = String::from_utf8(updated_sha_output.stdout)
