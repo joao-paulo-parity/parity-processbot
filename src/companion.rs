@@ -131,7 +131,7 @@ pub async fn companion_update(
 
 	run_cmd(
 		"git",
-		&["fetch", owner_remote, owner_branch],
+		&["fetch", owner_remote, &owner_branch],
 		&repo_dir,
 		CommandMessage::Enabled,
 	)
