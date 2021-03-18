@@ -79,7 +79,7 @@ pub async fn companion_update(
 		CommandMessage::SubstituteFor(CommandMessages {
 			cmd_display: Some(format!(
 				"git remote add {} https://x-access-token:${{SECRET}}@{}",
-				contributor, contributor_remote_address,
+				contributor, contributor_repository_domain,
 			)),
 			on_failure: Some(format!(
 				"Failed to add remote for {}",
