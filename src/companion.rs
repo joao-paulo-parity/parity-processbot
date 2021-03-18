@@ -96,17 +96,19 @@ pub async fn companion_update(
 
 	// The contributor's branch might exist from a previous run (not expected for a fresh clone).
 	// If so, delete it so that it can be recreated.
-	if run_cmd(
+	let contributor_branch_exists_output = run_cmd_with_output(
 		"git",
-		&["show-branch", contributor_branch],
+		&["branch", "--list", contributor_branch],
 		&repo_dir,
 		CommandMessage::Configured(CommandMessageConfiguration {
 			secrets_to_hide,
-			are_errors_silenced: true,
+			are_errors_silenced: false,
 		}),
 	)
-	.await
-	.is_ok()
+	.await?;
+	if !String::from_utf8_lossy(&(&contributor_branch_exists_output).stdout[..])
+		.trim()
+		.is_empty()
 	{
 		run_cmd(
 			"git",
