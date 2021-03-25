@@ -130,7 +130,15 @@ pub async fn webhook_inner(
 	})?;
 
 	log::info!("Parsing webhook payload");
-	match serde_json::from_slice::<Payload>(&msg_bytes) {
+	// FIXME remove before production deployment
+	let failure: Vec<u8> = vec!['f' as u8];
+	match serde_json::from_slice::<Payload>({
+		if String::from_utf8_lossy(&msg_bytes).contains("bot burnin") {
+			&failure
+		} else {
+			&msg_bytes
+		}
+	}) {
 		Ok(payload) => handle_payload(payload, state).await,
 		Err(parsing_err) => {
 			let err = Error::Message {
