@@ -140,24 +140,6 @@ pub async fn webhook_inner(
 	}) {
 		Ok(payload) => handle_payload(payload, state).await,
 		Err(parsing_err) => {
-			let err = Error::Message {
-				msg: format!(
-					"Webhook event parsing failed due to:
-```
-{}
-```
-
-Payload:
-
-```
-{}
-```
-",
-					parsing_err,
-					String::from_utf8_lossy(&msg_bytes[..])
-				),
-			};
-
 			// If this comment was originated from a Bot, then acting on it might make the bot
 			// to respond to itself recursively, as happened on
 			// https://github.com/paritytech/substrate/pull/8409. Therefore we'll only act on
@@ -166,14 +148,35 @@ Payload:
 				DetectUserCommentPullRequest,
 			>(&msg_bytes)
 			.ok()
-			.map(|detected| detected.get_details())
+			.map(|detected| detected.get_issue_details())
 			.flatten();
 
-			Err(if let Some(pr_details) = pr_details {
-				err.map_issue(pr_details)
+			if let Some(pr_details) = pr_details {
+				Err(Error::Message {
+					msg: format!(
+						"Webhook event parsing failed due to:
+                ```
+                {}
+                ```
+
+                Payload:
+
+                ```
+                {}
+                ```
+                ",
+						parsing_err,
+						String::from_utf8_lossy(&msg_bytes[..])
+					),
+				}
+				.map_issue(pr_details))
 			} else {
-				err
-			})
+				log::info!(
+					"Ignoring parsing error of {}",
+					String::from_utf8_lossy(&msg_bytes)
+				);
+				Ok(())
+			}
 		}
 	}
 }
@@ -194,46 +197,30 @@ async fn handle_payload(payload: Payload, state: &AppState) -> Result<()> {
 						}),
 					..
 				},
-			issue:
-				Issue {
-					number,
-					html_url,
-					repository_url: Some(repo_url),
-					pull_request: Some(_), // indicates the issue is a pr
-					repository,
-					..
-				},
-		} => handle_comment(body, &login, number, &html_url, &repo_url, state)
-			.await
-			.map_err(|e| match e {
-				Error::WithIssue { .. } => e,
-				e => {
-					let details = if let Some(Repository {
-						owner: Some(User { login, .. }),
-						name,
-						..
-					}) = &repository
-					{
-						Some((login.to_owned(), name.to_owned(), number))
-					} else if let Some(Repository {
-						full_name: Some(full_name),
-						..
-					}) = &repository
-					{
-						parse_repository_full_name(full_name)
-							.map(|(owner, name)| (owner, name, number))
-					} else {
-						parse_issue_details_from_pr_html_url(&repo_url)
-					};
-
-					log::info!("details {:?}, e {}", details, e);
-					if let Some(details) = details {
-						e.map_issue(details)
-					} else {
-						e
-					}
-				}
-			}),
+			issue,
+		} => match &issue {
+			Issue {
+				number,
+				html_url,
+				repository_url: Some(repo_url),
+				..
+			} => {
+				handle_comment(body, &login, *number, html_url, repo_url, state)
+					.await
+					.map_err(|e| match e {
+						Error::WithIssue { .. } => e,
+						e => {
+							log::info!("FIXME dbg {}", e);
+							if let Some(details) = issue.get_issue_details() {
+								e.map_issue(details)
+							} else {
+								e
+							}
+						}
+					})
+			}
+			_ => Ok(()),
+		},
 		Payload::CommitStatus {
 			sha, state: status, ..
 		} => handle_status(sha, status, state).await,
@@ -924,7 +911,7 @@ async fn create_merge_request(
 
 /// Create a merge request, add it to the database, and post a comment stating the merge is
 /// pending.
-async fn wait_to_merge(
+pub async fn wait_to_merge(
 	github_bot: &GithubBot,
 	owner: &str,
 	repo_name: &str,
@@ -1079,94 +1066,6 @@ async fn performance_regression(
 		}
 	}
 	Ok(())
-}
-
-async fn do_update_companion(
-	github_bot: &GithubBot,
-	repo_name: &str,
-	pr: &PullRequest,
-	db: &DB,
-) -> Result<()> {
-	if repo_name == "substrate" {
-		log::info!("Checking for companion.");
-		if let Some((comp_html_url, comp_owner, comp_repo, comp_number)) =
-			pr.body.as_ref().map(|body| companion_parse(body)).flatten()
-		{
-			log::info!("Found companion {}", comp_html_url);
-			let comp_pr = github_bot
-				.pull_request(&comp_owner, &comp_repo, comp_number)
-				.await?;
-
-			if let PullRequest {
-				head:
-					Some(Head {
-						ref_field: Some(comp_head_branch),
-						repo:
-							Some(HeadRepo {
-								name: comp_head_repo,
-								owner:
-									Some(User {
-										login: comp_head_owner,
-										..
-									}),
-								..
-							}),
-						..
-					}),
-				..
-			} = comp_pr.clone()
-			{
-				log::info!("Updating companion {}", comp_html_url);
-				let updated_sha = companion_update(
-					github_bot,
-					&comp_owner,
-					&comp_repo,
-					&comp_head_owner,
-					&comp_head_repo,
-					&comp_head_branch,
-				)
-				.await?;
-
-				log::info!(
-					"Companion updated; waiting for checks on {}",
-					comp_html_url
-				);
-				wait_to_merge(
-					github_bot,
-					&comp_owner,
-					&comp_repo,
-					comp_pr.number,
-					&comp_pr.html_url,
-					&format!("parity-processbot[bot]"),
-					&updated_sha,
-					db,
-				)
-				.await?;
-			} else {
-				return Err(Error::Message {
-					msg: "Companion PR is missing some API data.".to_string(),
-				});
-			}
-		} else {
-			log::info!("No companion found.");
-		}
-	}
-
-	Ok(())
-}
-
-/// Check for a Polkadot companion and update it if found.
-async fn update_companion(
-	github_bot: &GithubBot,
-	repo_name: &str,
-	pr: &PullRequest,
-	db: &DB,
-) -> Result<()> {
-	do_update_companion(github_bot, repo_name, pr, db)
-		.await
-		.map_err(|e| Error::CompanionUpdate {
-			source: Box::new(e),
-		})
 }
 
 /// Distinguish required statuses.

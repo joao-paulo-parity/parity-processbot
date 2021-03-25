@@ -1,6 +1,7 @@
 use snafu::Snafu;
 
-type IssueDetails = (String, String, i64);
+// TODO this really should be struct { repository, owner, number }
+pub type IssueDetails = (String, String, i64);
 
 #[derive(Debug, Snafu)]
 #[snafu(visibility = "pub")]
