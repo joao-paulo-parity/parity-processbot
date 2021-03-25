@@ -129,7 +129,6 @@ pub async fn webhook_inner(
 		msg: format!("Validation signature does not match"),
 	})?;
 
-	log::info!("Parsing webhook payload");
 	// FIXME remove before production deployment
 	let failure: Vec<u8> = vec!['f' as u8];
 	match serde_json::from_slice::<Payload>({
@@ -227,6 +226,7 @@ async fn handle_payload(payload: Payload, state: &AppState) -> Result<()> {
 						parse_issue_details_from_pr_html_url(&repo_url)
 					};
 
+					log::info!("details {:?}, e {}", details, e);
 					if let Some(details) = details {
 						e.map_issue(details)
 					} else {
@@ -1185,7 +1185,7 @@ fn status_failure_allowed(ci: &str, context: &str) -> bool {
 const TROUBLESHOOT_MSG: &str = "Merge can be attempted if:\n- The PR has approval from two core-devs (or one if the PR is labelled insubstantial).\n- The PR has approval from a member of `substrateteamleads`.\n- The PR is attached to a project column and has approval from the project owner.\n\nSee https://github.com/paritytech/parity-processbot#faq";
 
 async fn handle_error(e: Error, state: &AppState) {
-	log::error!("{}", e);
+	log::error!("handle_error {}", e);
 
 	match e {
 		Error::WithIssue {
@@ -1275,7 +1275,7 @@ async fn handle_error(e: Error, state: &AppState) {
 					body: serde_json::Value::Object(m),
 					..
 				} => format!("Response error: `{}`", m["message"]),
-				Error::Message { msg } => format!("Error: `{}`", msg),
+				Error::Message { msg } => format!("Error: {}", msg),
 				_ => "Unexpected error; see logs.".to_string(),
 			};
 			let _ = state
