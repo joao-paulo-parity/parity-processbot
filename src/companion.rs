@@ -9,7 +9,7 @@ use crate::{
 	COMPANION_SHORT_REGEX, COMPANION_SHORT_SUFFIX_REGEX, PR_HTML_URL_REGEX,
 };
 
-async fn companion_update(
+async fn update_companion_repository(
 	github_bot: &GithubBot,
 	owner: &str,
 	owner_repo: &str,
@@ -304,7 +304,7 @@ async fn perform_companion_update(
 	} = comp_pr.clone()
 	{
 		log::info!("Updating companion {}", html_url);
-		let updated_sha = companion_update(
+		let updated_sha = update_companion_repository(
 			github_bot,
 			&owner,
 			&repo,
