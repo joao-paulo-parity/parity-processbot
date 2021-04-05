@@ -5,6 +5,7 @@ use parity_processbot::{
 	setup::setup,
 	webhook::handle_payload,
 };
+use serde_json::json;
 use std::fs;
 use std::process::Stdio;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -226,6 +227,21 @@ git_fetch_url
 		Expectation::matching(request::method_path(
 			"GET",
 			format!(
+				"/orgs/{}/members/{}",
+				substrate_org,
+				(&placeholder_user).login
+			),
+		))
+		.respond_with(
+			status_code(204)
+				.append_header("Content-Type", "application/json")
+				.body(serde_json::to_string(&json!({})).unwrap()),
+		),
+	);
+	github_api.expect(
+		Expectation::matching(request::method_path(
+			"GET",
+			format!(
 				"/repos/{}/{}/pulls/{}",
 				substrate_org, substrate_repo_name, substrate_pr_number
 			),
@@ -260,15 +276,14 @@ git_fetch_url
 
 	let companion_pr_number: usize = 1;
 	let companion_repository_url = "https://github.com/companion/companion";
-	let companion_api_merge_path = format!(
-		"/repos/{}/{}/pulls/{}/merge",
-		companion_org, companion_repo, companion_pr_number
-	);
 	let companion_merge_tries = Arc::new(AtomicUsize::new(0));
 	github_api.expect(
 		Expectation::matching(request::method_path(
 			"PUT",
-			companion_api_merge_path,
+			format!(
+				"/repos/{}/{}/pulls/{}/merge",
+				companion_org, companion_repo, companion_pr_number
+			),
 		))
 		.respond_with(move || {
 			if companion_merge_tries.fetch_add(1, Ordering::SeqCst) == 1 {
