@@ -1,6 +1,7 @@
 use httptest::{matchers::*, responders::*, Expectation, Server};
 use parity_processbot::{
 	config::{BotConfig, MainConfig},
+	constants::*,
 	github, github_bot, gitlab_bot, matrix_bot,
 	setup::setup,
 	webhook::handle_payload,
@@ -32,19 +33,17 @@ async fn case1() {
 	let git_daemon_port = utils::get_available_port().unwrap();
 	let git_fetch_url = &format!("git://127.0.0.1:{}", git_daemon_port);
 
-	let substrate_org = "substrate";
+	let org = "substrate";
 	let substrate_repo_name = "substrate";
-	let substrate_repo_dir = git_daemon_dir
-		.path()
-		.join(substrate_org)
-		.join(substrate_repo_name);
+	let substrate_repo_dir =
+		git_daemon_dir.path().join(org).join(substrate_repo_name);
 	let substrate_user = &github::User {
-		login: substrate_org.to_string(),
+		login: org.to_string(),
 		type_field: Some(github::UserType::User),
 	};
 	let substrate_repo = github::Repository {
 		name: substrate_repo_name.to_string(),
-		full_name: Some(format!("{}/{}", substrate_org, substrate_repo_name)),
+		full_name: Some(format!("{}/{}", org, substrate_repo_name)),
 		owner: Some(substrate_user.clone()),
 		html_url: "".to_string(),
 	};
@@ -106,12 +105,13 @@ description = "substrate"
 		.trim()
 		.to_string();
 
-	let companion_org = "companion";
-	let companion_repo = "companion";
-	let companion_repo_dir = git_daemon_dir
-		.path()
-		.join(companion_org)
-		.join(companion_repo);
+	let companion_repo_name = "companion";
+	let companion_user = &github::User {
+		login: org.to_string(),
+		type_field: Some(github::UserType::User),
+	};
+	let companion_repo_dir =
+		git_daemon_dir.path().join(org).join(companion_repo_name);
 	fs::create_dir_all(&companion_repo_dir).unwrap();
 	Command::new("git")
 		.arg("init")
@@ -123,6 +123,17 @@ description = "substrate"
 		.unwrap()
 		.await
 		.unwrap();
+	let companion_head_sha_cmd = Command::new("git")
+		.arg("rev-parse")
+		.arg("HEAD")
+		.current_dir(&companion_repo_dir)
+		.output()
+		.await
+		.unwrap();
+	let companion_head_sha = &String::from_utf8(companion_head_sha_cmd.stdout)
+		.unwrap()
+		.trim()
+		.to_string();
 	fs::write(
 		&companion_repo_dir.join("Cargo.toml"),
 		r#"
@@ -178,10 +189,9 @@ git_fetch_url
 		.unwrap();
 
 	let github_api = Server::run();
-	let api_base_url = github_api.url("").to_string();
-	github::BASE_API_URL
-		.set(api_base_url[0..api_base_url.len() - 1].to_string())
-		.unwrap();
+	let api_base_url = &github_api.url("").to_string();
+	let api_base_url = &api_base_url[0..api_base_url.len() - 1];
+	github::BASE_API_URL.set(api_base_url.to_owned()).unwrap();
 	github_api.expect(
 		Expectation::matching(request::method_path(
 			"GET",
@@ -205,20 +215,46 @@ git_fetch_url
 			expires_at: None,
 		})),
 	);
+	github_api.expect(
+		Expectation::matching(request::method_path(
+			"POST",
+			format!("/app/installations/{}/access_tokens", 1),
+		))
+		.respond_with(json_encoded(github::InstallationToken {
+			token: "DOES_NOT_MATTER".to_string(),
+			expires_at: None,
+		})),
+	);
+	github_api.expect(
+		Expectation::matching(request::method_path(
+			"GET",
+			format!("/orgs/{}/teams/{}", org, CORE_DEVS_GROUP),
+		))
+		.respond_with(json_encoded(vec![placeholder_user.clone()])),
+	);
+	github_api.expect(
+		Expectation::matching(request::method_path(
+			"GET",
+			format!("/orgs/{}/teams/{}", org, SUBSTRATE_TEAM_LEADS_GROUP),
+		))
+		.respond_with(json_encoded(vec![placeholder_user.clone()])),
+	);
 
 	let substrate_pr_number = 1;
-	let substrate_repository_url = format!(
-		"https://github.com/{}/{}",
-		substrate_org, substrate_repo_name
-	);
+	let substrate_repository_url =
+		format!("https://github.com/{}/{}", org, substrate_repo_name);
 	let substrate_pr_url =
 		format!("{}/pull/{}", substrate_repository_url, substrate_pr_number);
+	let substrate_pr_api_url = &format!(
+		"{}/repos/{}/{}/pull/{}",
+		api_base_url, org, substrate_repo_name, substrate_pr_number
+	);
 	github_api.expect(
 		Expectation::matching(request::method_path(
 			"PUT",
 			format!(
 				"/repos/{}/{}/pulls/{}/merge",
-				substrate_org, substrate_repo_name, substrate_pr_number
+				org, substrate_repo_name, substrate_pr_number
 			),
 		))
 		.respond_with(status_code(200)),
@@ -226,11 +262,7 @@ git_fetch_url
 	github_api.expect(
 		Expectation::matching(request::method_path(
 			"GET",
-			format!(
-				"/orgs/{}/members/{}",
-				substrate_org,
-				(&placeholder_user).login
-			),
+			format!("/orgs/{}/members/{}", org, (&placeholder_user).login),
 		))
 		.respond_with(
 			status_code(204)
@@ -243,7 +275,7 @@ git_fetch_url
 			"GET",
 			format!(
 				"/repos/{}/{}/pulls/{}",
-				substrate_org, substrate_repo_name, substrate_pr_number
+				org, substrate_repo_name, substrate_pr_number
 			),
 		))
 		.respond_with(json_encoded(github::PullRequest {
@@ -252,7 +284,7 @@ git_fetch_url
 			labels: vec![],
 			mergeable: Some(true),
 			html_url: substrate_pr_url.clone(),
-			url: substrate_pr_url.clone(),
+			url: substrate_pr_api_url.clone(),
 			user: Some(placeholder_user.clone()),
 			repository: Some(substrate_repo.clone()),
 			base: github::Base {
@@ -273,16 +305,62 @@ git_fetch_url
 			}),
 		})),
 	);
+	github_api.expect(
+		Expectation::matching(request::method_path(
+			"GET",
+			format!("{}/reviews", substrate_pr_api_url,),
+		))
+		.respond_with(json_encoded(vec![github::Review {
+			id: 1,
+			user: Some(placeholder_user.clone()),
+			state: Some(github::ReviewState::Approved),
+		}])),
+	);
 
-	let companion_pr_number: usize = 1;
+	let companion_pr_number: i64 = 1;
 	let companion_repository_url = "https://github.com/companion/companion";
 	let companion_merge_tries = Arc::new(AtomicUsize::new(0));
+	github_api.expect(
+		Expectation::matching(request::method_path(
+			"GET",
+			format!(
+				"/repos/{}/{}/pulls/{}",
+				org, companion_repo_name, companion_pr_number
+			),
+		))
+		.respond_with(json_encoded(github::PullRequest {
+			body: Some("".to_string()),
+			number: companion_pr_number,
+			labels: vec![],
+			mergeable: Some(true),
+			html_url: substrate_pr_url.clone(),
+			url: substrate_pr_api_url.clone(),
+			user: Some(placeholder_user.clone()),
+			repository: Some(substrate_repo.clone()),
+			base: github::Base {
+				ref_field: Some("master".to_string()),
+				sha: Some(companion_head_sha.clone()),
+				repo: Some(github::HeadRepo {
+					name: companion_repo_name.to_string(),
+					owner: Some(companion_user.clone()),
+				}),
+			},
+			head: Some(github::Head {
+				ref_field: Some("develop".to_string()),
+				sha: Some(placeholder_sha.to_string()),
+				repo: Some(github::HeadRepo {
+					name: companion_repo_name.to_string(),
+					owner: Some(companion_user.clone()),
+				}),
+			}),
+		})),
+	);
 	github_api.expect(
 		Expectation::matching(request::method_path(
 			"PUT",
 			format!(
 				"/repos/{}/{}/pulls/{}/merge",
-				companion_org, companion_repo, companion_pr_number
+				org, companion_repo_name, companion_pr_number
 			),
 		))
 		.respond_with(move || {
