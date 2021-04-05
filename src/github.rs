@@ -177,7 +177,6 @@ pub struct IssuePullRequest {}
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Head {
-	pub label: Option<String>,
 	#[serde(rename = "ref")]
 	pub ref_field: Option<String>,
 	pub sha: Option<String>,
@@ -234,8 +233,6 @@ pub struct Repository {
 	pub full_name: Option<String>,
 	pub owner: Option<User>,
 	pub html_url: String,
-	pub issues_url: Option<String>,
-	pub pulls_url: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -316,8 +313,6 @@ pub struct CheckRuns {
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct HeadRepo {
-	pub id: i64,
-	pub url: String,
 	pub name: String,
 	// The owner might be missing when e.g. they have deleted their account
 	pub owner: Option<User>,

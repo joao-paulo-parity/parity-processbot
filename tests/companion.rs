@@ -17,25 +17,36 @@ mod utils;
 async fn case1() {
 	env_logger::init();
 
-	let placeholder_string = "".to_string();
+	let bot_username = "bot";
 	let placeholder_user = github::User {
 		login: "foo".to_string(),
+		type_field: Some(github::UserType::User),
 	};
-	let placeholder_number = 1;
 	let placeholder_sha = "MDEwOlJlcG9zaXRvcnkxMDk4NzI2MjA=";
+	let placeholder_id: usize = 1;
 
 	let db_dir = tempfile::tempdir().unwrap();
 
 	let git_daemon_dir = tempfile::tempdir().unwrap();
 	let git_daemon_port = utils::get_available_port().unwrap();
-	let git_fetch_url = format!("git://127.0.0.1:{}", git_daemon_port);
+	let git_fetch_url = &format!("git://127.0.0.1:{}", git_daemon_port);
 
 	let substrate_org = "substrate";
-	let substrate_repo = "substrate";
+	let substrate_repo_name = "substrate";
 	let substrate_repo_dir = git_daemon_dir
 		.path()
 		.join(substrate_org)
-		.join(substrate_repo);
+		.join(substrate_repo_name);
+	let substrate_user = &github::User {
+		login: substrate_org.to_string(),
+		type_field: Some(github::UserType::User),
+	};
+	let substrate_repo = github::Repository {
+		name: substrate_repo_name.to_string(),
+		full_name: Some(format!("{}/{}", substrate_org, substrate_repo_name)),
+		owner: Some(substrate_user.clone()),
+		html_url: "".to_string(),
+	};
 	fs::create_dir_all(&substrate_repo_dir).unwrap();
 	Command::new("git")
 		.arg("init")
@@ -166,80 +177,92 @@ git_fetch_url
 		.unwrap();
 
 	let github_api = Server::run();
+	let api_base_url = github_api.url("").to_string();
 	github::BASE_API_URL
-		.set(github_api.url("").to_string())
+		.set(api_base_url[0..api_base_url.len() - 1].to_string())
 		.unwrap();
+	github_api.expect(
+		Expectation::matching(request::method_path(
+			"GET",
+			"/app/installations",
+		))
+		.respond_with(json_encoded(vec![github::Installation {
+			id: 1,
+			account: github::User {
+				login: bot_username.to_string(),
+				type_field: Some(github::UserType::Bot),
+			},
+		}])),
+	);
+	github_api.expect(
+		Expectation::matching(request::method_path(
+			"POST",
+			format!("/app/installations/{}/access_tokens", 1),
+		))
+		.respond_with(json_encoded(github::InstallationToken {
+			token: "DOES_NOT_MATTER".to_string(),
+			expires_at: None,
+		})),
+	);
 
 	let substrate_pr_number = 1;
-	let substrate_repository_url =
-		format!("https://foo.com/{}/{}", substrate_org, substrate_repo);
+	let substrate_repository_url = format!(
+		"https://github.com/{}/{}",
+		substrate_org, substrate_repo_name
+	);
 	let substrate_pr_url =
 		format!("{}/pull/{}", substrate_repository_url, substrate_pr_number);
 	github_api.expect(
 		Expectation::matching(request::method_path(
 			"PUT",
 			format!(
-				"/{}/repos/{}/{}/pulls/{}/merge",
-				github::base_api_url(),
-				substrate_org,
-				substrate_repo,
-				substrate_pr_number
+				"/repos/{}/{}/pulls/{}/merge",
+				substrate_org, substrate_repo_name, substrate_pr_number
 			),
 		))
 		.respond_with(status_code(200)),
 	);
 	github_api.expect(
 		Expectation::matching(request::method_path(
-			"PUT",
+			"GET",
 			format!(
-				"/{}/repos/{}/{}/pulls/{}",
-				github::base_api_url(),
-				substrate_org,
-				substrate_repo,
-				substrate_pr_number
+				"/repos/{}/{}/pulls/{}",
+				substrate_org, substrate_repo_name, substrate_pr_number
 			),
 		))
 		.respond_with(json_encoded(github::PullRequest {
-			body: Some(placeholder_string.clone()),
+			body: Some("".to_string()),
 			number: substrate_pr_number,
 			labels: vec![],
 			mergeable: Some(true),
 			html_url: substrate_pr_url.clone(),
 			url: substrate_pr_url.clone(),
 			user: Some(placeholder_user.clone()),
+			repository: Some(substrate_repo.clone()),
 			base: github::Base {
-				ref_field: "master".to_string(),
-				sha: substrate_head_sha,
-				repo: github::HeadRepo {
-					name: substrate_repo.to_string(),
-					owner: Some(github::User {
-						login: substrate_org.to_string(),
-					}),
-				},
+				ref_field: Some("master".to_string()),
+				sha: Some(substrate_head_sha),
+				repo: Some(github::HeadRepo {
+					name: substrate_repo_name.to_string(),
+					owner: Some(substrate_user.clone()),
+				}),
 			},
-			head: github::Head {
-				ref_field: "develop".to_string(),
-				sha: placeholder_sha.to_string(),
-				repo: github::HeadRepo {
-					name: substrate_repo.to_string(),
-					owner: Some(github::User {
-						login: substrate_org.to_string(),
-					}),
-				},
-			},
+			head: Some(github::Head {
+				ref_field: Some("develop".to_string()),
+				sha: Some(placeholder_sha.to_string()),
+				repo: Some(github::HeadRepo {
+					name: substrate_repo_name.to_string(),
+					owner: Some(substrate_user.clone()),
+				}),
+			}),
 		})),
 	);
 
-	let companion_pr_number = 1;
+	let companion_pr_number: usize = 1;
 	let companion_repository_url = "https://github.com/companion/companion";
-	let companion_pr_url =
-		format!("{}/pull/{}", companion_repository_url, companion_pr_number);
 	let companion_api_merge_path = format!(
-		"/{}/repos/{}/{}/pulls/{}/merge",
-		github::base_api_url(),
-		companion_org,
-		companion_repo,
-		companion_pr_number
+		"/repos/{}/{}/pulls/{}/merge",
+		companion_org, companion_repo, companion_pr_number
 	);
 	let companion_merge_tries = Arc::new(AtomicUsize::new(0));
 	github_api.expect(
@@ -256,40 +279,58 @@ git_fetch_url
 		}),
 	);
 
-	let placeholder_private_key = "
------BEGIN RSA PRIVATE KEY-----
-MIIBPQIBAAJBAOsfi5AGYhdRs/x6q5H7kScxA0Kzzqe6WI6gf6+tc6IvKQJo5rQc
-dWWSQ0nRGt2hOPDO+35NKhQEjBQxPh/v7n0CAwEAAQJBAOGaBAyuw0ICyENy5NsO
-2gkT00AWTSzM9Zns0HedY31yEabkuFvrMCHjscEF7u3Y6PB7An3IzooBHchsFDei
-AAECIQD/JahddzR5K3A6rzTidmAf1PBtqi7296EnWv8WvpfAAQIhAOvowIXZI4Un
-DXjgZ9ekuUjZN+GUQRAVlkEEohGLVy59AiEA90VtqDdQuWWpvJX0cM08V10tLXrT
-TTGsEtITid1ogAECIQDAaFl90ZgS5cMrL3wCeatVKzVUmuJmB/VAmlLFFGzK0QIh
-ANJGc7AFk4fyFD/OezhwGHbWmo/S+bfeAiIh2Ss2FxKJ
------END RSA PRIVATE KEY-----
-"
-	.as_bytes()
-	.to_vec();
+	let placeholder_private_key = "-----BEGIN PRIVATE KEY-----
+MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQDJETqse41HRBsc
+7cfcq3ak4oZWFCoZlcic525A3FfO4qW9BMtRO/iXiyCCHn8JhiL9y8j5JdVP2Q9Z
+IpfElcFd3/guS9w+5RqQGgCR+H56IVUyHZWtTJbKPcwWXQdNUX0rBFcsBzCRESJL
+eelOEdHIjG7LRkx5l/FUvlqsyHDVJEQsHwegZ8b8C0fz0EgT2MMEdn10t6Ur1rXz
+jMB/wvCg8vG8lvciXmedyo9xJ8oMOh0wUEgxziVDMMovmC+aJctcHUAYubwoGN8T
+yzcvnGqL7JSh36Pwy28iPzXZ2RLhAyJFU39vLaHdljwthUaupldlNyCfa6Ofy4qN
+ctlUPlN1AgMBAAECggEAdESTQjQ70O8QIp1ZSkCYXeZjuhj081CK7jhhp/4ChK7J
+GlFQZMwiBze7d6K84TwAtfQGZhQ7km25E1kOm+3hIDCoKdVSKch/oL54f/BK6sKl
+qlIzQEAenho4DuKCm3I4yAw9gEc0DV70DuMTR0LEpYyXcNJY3KNBOTjN5EYQAR9s
+2MeurpgK2MdJlIuZaIbzSGd+diiz2E6vkmcufJLtmYUT/k/ddWvEtz+1DnO6bRHh
+xuuDMeJA/lGB/EYloSLtdyCF6sII6C6slJJtgfb0bPy7l8VtL5iDyz46IKyzdyzW
+tKAn394dm7MYR1RlUBEfqFUyNK7C+pVMVoTwCC2V4QKBgQD64syfiQ2oeUlLYDm4
+CcKSP3RnES02bcTyEDFSuGyyS1jldI4A8GXHJ/lG5EYgiYa1RUivge4lJrlNfjyf
+dV230xgKms7+JiXqag1FI+3mqjAgg4mYiNjaao8N8O3/PD59wMPeWYImsWXNyeHS
+55rUKiHERtCcvdzKl4u35ZtTqQKBgQDNKnX2bVqOJ4WSqCgHRhOm386ugPHfy+8j
+m6cicmUR46ND6ggBB03bCnEG9OtGisxTo/TuYVRu3WP4KjoJs2LD5fwdwJqpgtHl
+yVsk45Y1Hfo+7M6lAuR8rzCi6kHHNb0HyBmZjysHWZsn79ZM+sQnLpgaYgQGRbKV
+DZWlbw7g7QKBgQCl1u+98UGXAP1jFutwbPsx40IVszP4y5ypCe0gqgon3UiY/G+1
+zTLp79GGe/SjI2VpQ7AlW7TI2A0bXXvDSDi3/5Dfya9ULnFXv9yfvH1QwWToySpW
+Kvd1gYSoiX84/WCtjZOr0e0HmLIb0vw0hqZA4szJSqoxQgvF22EfIWaIaQKBgQCf
+34+OmMYw8fEvSCPxDxVvOwW2i7pvV14hFEDYIeZKW2W1HWBhVMzBfFB5SE8yaCQy
+pRfOzj9aKOCm2FjjiErVNpkQoi6jGtLvScnhZAt/lr2TXTrl8OwVkPrIaN0bG/AS
+aUYxmBPCpXu3UjhfQiWqFq/mFyzlqlgvuCc9g95HPQKBgAscKP8mLxdKwOgX8yFW
+GcZ0izY/30012ajdHY+/QK5lsMoxTnn0skdS+spLxaS5ZEO4qvPVb8RAoCkWMMal
+2pOhmquJQVDPDLuZHdrIiKiDM20dy9sMfHygWcZjQ4WSxf/J7T9canLZIXFhHAZT
+3wc9h4G8BBCtWN2TN/LsGZdB
+-----END PRIVATE KEY-----"
+		.as_bytes()
+		.to_vec();
 
 	let state = setup(
 		Some(MainConfig {
-			environment: placeholder_string.clone(),
-			test_repo: placeholder_string.clone(),
-			installation_login: placeholder_string.clone(),
-			webhook_secret: placeholder_string.clone(),
-			webhook_port: placeholder_string.clone(),
+			environment: "".to_string(),
+			test_repo: "".to_string(),
+			installation_login: bot_username.to_string(),
+			webhook_secret: "".to_string(),
+			webhook_port: "".to_string(),
 			db_path: (&db_dir).path().display().to_string(),
-			bamboo_token: placeholder_string.clone(),
+			bamboo_token: "".to_string(),
 			private_key: placeholder_private_key.clone(),
-			matrix_homeserver: placeholder_string.clone(),
-			matrix_access_token: placeholder_string.clone(),
-			matrix_default_channel_id: placeholder_string.clone(),
+			matrix_homeserver: "".to_string(),
+			matrix_access_token: "".to_string(),
+			matrix_default_channel_id: "".to_string(),
 			main_tick_secs: 0,
 			bamboo_tick_secs: 0,
 			matrix_silent: true,
-			gitlab_hostname: placeholder_string.clone(),
-			gitlab_project: placeholder_string.clone(),
-			gitlab_job_name: placeholder_string.clone(),
-			gitlab_private_token: placeholder_string.clone(),
+			gitlab_hostname: "".to_string(),
+			gitlab_project: "".to_string(),
+			gitlab_job_name: "".to_string(),
+			gitlab_private_token: "".to_string(),
+			github_app_id: placeholder_id,
 		}),
 		Some(BotConfig {
 			status_failure_ping: 0,
@@ -304,13 +345,14 @@ ANJGc7AFk4fyFD/OezhwGHbWmo/S+bfeAiIh2Ss2FxKJ
 			public_review_reminder_ping: 0,
 			public_review_reminder_delay: 0,
 			min_reviewers: 0,
-			core_sorting_repo_name: placeholder_string.clone(),
-			logs_room_id: placeholder_string.clone(),
+			core_sorting_repo_name: "".to_string(),
+			logs_room_id: "".to_string(),
 		}),
 		Some(matrix_bot::MatrixBot::new_placeholder_for_testing()),
 		Some(gitlab_bot::GitlabBot::new_placeholder_for_testing()),
 		Some(github_bot::GithubBot::new_for_testing(
 			placeholder_private_key.clone(),
+			bot_username,
 			git_fetch_url,
 		)),
 		false,
@@ -323,36 +365,16 @@ ANJGc7AFk4fyFD/OezhwGHbWmo/S+bfeAiIh2Ss2FxKJ
 			action: github::IssueCommentAction::Created,
 			comment: github::Comment {
 				body: "bot merge".to_string(),
-				user: placeholder_user.clone(),
+				user: Some(placeholder_user.clone()),
 			},
 			issue: github::Issue {
-				id: placeholder_number,
 				number: substrate_pr_number,
-				body: Some(placeholder_string.clone()),
+				body: Some("".to_string()),
 				html_url: substrate_pr_url,
 				repository_url: Some(substrate_repository_url.to_string()),
 				pull_request: Some(github::IssuePullRequest {}),
-			},
-		},
-		&state,
-	)
-	.await
-	.unwrap();
-
-	handle_payload(
-		github::Payload::IssueComment {
-			action: github::IssueCommentAction::Created,
-			comment: github::Comment {
-				body: "bot merge".to_string(),
-				user: placeholder_user.clone(),
-			},
-			issue: github::Issue {
-				id: placeholder_number,
-				number: companion_pr_number,
-				body: Some(placeholder_string.clone()),
-				html_url: companion_pr_url,
-				repository_url: Some(companion_repository_url.to_string()),
-				pull_request: Some(github::IssuePullRequest {}),
+				repository: Some(substrate_repo.clone()),
+				user: Some(placeholder_user.clone()),
 			},
 		},
 		&state,

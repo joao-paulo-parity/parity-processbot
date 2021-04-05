@@ -52,6 +52,7 @@ pub async fn setup(
 		github_bot::GithubBot::new(
 			config.private_key.clone(),
 			&config.installation_login,
+			config.github_app_id,
 		)
 		.await?
 	};

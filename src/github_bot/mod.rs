@@ -27,10 +27,12 @@ impl GithubBot {
 	pub async fn new(
 		private_key: impl Into<Vec<u8>>,
 		installation_login: &str,
+		app_id: usize,
 	) -> Result<Self> {
 		let client = crate::http::Client::new(
 			private_key.into(),
 			installation_login.to_owned(),
+			app_id,
 		);
 
 		Ok(Self {
@@ -40,17 +42,21 @@ impl GithubBot {
 		})
 	}
 
-	pub async fn new_for_testing(
+	pub fn new_for_testing(
 		private_key: Vec<u8>,
-		fetch_domain: String,
-		fetch_prefix: String,
-	) -> Result<Self> {
-		let client = crate::http::Client::new(private_key, "".to_string());
-		Ok(Self {
+		installation_login: &str,
+		fetch_domain: &str,
+	) -> Self {
+		let client = crate::http::Client::new(
+			private_key,
+			installation_login.to_owned(),
+			1,
+		);
+		Self {
 			client,
-			fetch_domain: Some(fetch_domain),
-			fetch_prefix: Some(fetch_prefix),
-		})
+			fetch_domain: Some(fetch_domain.to_string()),
+			fetch_prefix: Some("".to_owned()),
+		}
 	}
 
 	pub fn owner_from_html_url(url: &str) -> Option<&str> {
