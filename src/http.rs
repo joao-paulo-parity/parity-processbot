@@ -123,7 +123,6 @@ impl Client {
 	}
 
 	pub async fn auth_key(&self) -> Result<String> {
-		log::debug!("auth_key");
 		lazy_static::lazy_static! {
 			static ref TOKEN_CACHE: parking_lot::Mutex<Option<(DateTime<Utc>, String)>> = {
 				parking_lot::Mutex::new(None)
@@ -211,7 +210,6 @@ impl Client {
 	}
 
 	fn create_jwt(&self) -> Result<String> {
-		log::debug!("create_jwt");
 		const TEN_MINS_IN_SECONDS: u64 = 10 * 60;
 		let iat = SystemTime::now()
 			.duration_since(SystemTime::UNIX_EPOCH)
@@ -234,7 +232,6 @@ impl Client {
 	}
 
 	async fn jwt_execute(&self, builder: RequestBuilder) -> Result<Response> {
-		log::debug!("jwt_execute");
 		let response = builder
 			.bearer_auth(&self.create_jwt()?)
 			.header(
@@ -256,7 +253,6 @@ impl Client {
 	where
 		T: serde::de::DeserializeOwned,
 	{
-		log::debug!("jwt_get");
 		self.jwt_execute(self.client.get(url))
 			.await?
 			.json::<T>()
@@ -273,7 +269,6 @@ impl Client {
 	where
 		T: serde::de::DeserializeOwned,
 	{
-		log::debug!("jwt_post");
 		self.jwt_execute(self.client.post(url).json(body))
 			.await?
 			.json::<T>()
@@ -340,7 +335,6 @@ impl Client {
 		I: Into<Cow<'b, str>> + Clone,
 		P: Serialize + Clone,
 	{
-		log::debug!("get_response");
 		// retry up to 5 times if request times out
 		let mut retries = 0;
 		'retry: loop {
@@ -369,12 +363,10 @@ impl Client {
 		I: Into<Cow<'b, str>>,
 		T: serde::de::DeserializeOwned + core::fmt::Debug,
 	{
-		log::debug!("get_all");
 		let mut entities = Vec::new();
 		let mut next = Some(url.into());
 
 		while let Some(url) = next {
-			log::debug!("getting next");
 			let response =
 				self.get_response(url, serde_json::json!({})).await?;
 

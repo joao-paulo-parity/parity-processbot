@@ -1,4 +1,5 @@
 use httptest::{matchers::*, responders::*, Expectation, Server};
+use insta::assert_snapshot;
 use parity_processbot::{
 	config::{BotConfig, MainConfig},
 	constants::*,
@@ -16,15 +17,21 @@ use tokio::process::Command;
 mod utils;
 
 #[tokio::test]
-async fn case1() {
-	env_logger::init();
+async fn team_lead_merges_pr() {
+	let log_dir = tempfile::tempdir().unwrap();
+	flexi_logger::Logger::with_env_or_str("parity_processbot=info")
+		.log_to_file()
+		.directory((&log_dir).path().to_path_buf())
+		.duplicate_to_stdout(flexi_logger::Duplicate::All)
+		.start()
+		.unwrap();
 
 	let bot_username = "bot";
 	let placeholder_user = github::User {
 		login: "foo".to_string(),
 		type_field: Some(github::UserType::User),
 	};
-	let placeholder_sha = "MDEwOlJlcG9zaXRvcnkxMDk4NzI2MjA=";
+	let placeholder_sha = "MDEwOlJlcG9zaXRvcnkxMDk4NzI2MjA";
 	let placeholder_id: usize = 1;
 
 	let db_dir = tempfile::tempdir().unwrap();
@@ -33,7 +40,9 @@ async fn case1() {
 	let git_daemon_port = utils::get_available_port().unwrap();
 	let git_fetch_url = &format!("git://127.0.0.1:{}", git_daemon_port);
 
-	let org = "substrate";
+	let org = "org";
+	let teamleads_team_id = 1;
+	let coredevs_team_id = 2;
 	let substrate_repo_name = "substrate";
 	let substrate_repo_dir =
 		git_daemon_dir.path().join(org).join(substrate_repo_name);
@@ -105,78 +114,6 @@ description = "substrate"
 		.trim()
 		.to_string();
 
-	let companion_repo_name = "companion";
-	let companion_user = &github::User {
-		login: org.to_string(),
-		type_field: Some(github::UserType::User),
-	};
-	let companion_repo_dir =
-		git_daemon_dir.path().join(org).join(companion_repo_name);
-	fs::create_dir_all(&companion_repo_dir).unwrap();
-	Command::new("git")
-		.arg("init")
-		.arg("-b")
-		.arg("master")
-		.stdout(Stdio::null())
-		.current_dir(&companion_repo_dir)
-		.spawn()
-		.unwrap()
-		.await
-		.unwrap();
-	let companion_head_sha_cmd = Command::new("git")
-		.arg("rev-parse")
-		.arg("HEAD")
-		.current_dir(&companion_repo_dir)
-		.output()
-		.await
-		.unwrap();
-	let companion_head_sha = &String::from_utf8(companion_head_sha_cmd.stdout)
-		.unwrap()
-		.trim()
-		.to_string();
-	fs::write(
-		&companion_repo_dir.join("Cargo.toml"),
-		r#"
-[package]
-name = "companion"
-version = "0.0.1"
-authors = ["companion <companion@companion.com>"]
-description = "companion"
-
-[dependencies]
-"#
-		.to_string() + format!(
-"substrate = {{ git = \"{}/substrate/substrate\", branch = \"master\" }}",
-git_fetch_url
-)
-		.as_str(),
-	)
-	.unwrap();
-
-	let companion_src_dir = &companion_repo_dir.join("src");
-	fs::create_dir(&companion_src_dir).unwrap();
-	fs::write((&companion_src_dir).join("main.rs"), "fn main() {}").unwrap();
-
-	Command::new("git")
-		.arg("add")
-		.arg(".")
-		.stdout(Stdio::null())
-		.current_dir(&companion_repo_dir)
-		.spawn()
-		.unwrap()
-		.await
-		.unwrap();
-	Command::new("git")
-		.arg("commit")
-		.arg("-m")
-		.arg("init")
-		.stdout(Stdio::null())
-		.current_dir(&companion_repo_dir)
-		.spawn()
-		.unwrap()
-		.await
-		.unwrap();
-
 	// Hold onto the git daemon process handle until the test is done
 	let _ = Command::new("git")
 		.arg("daemon")
@@ -215,40 +152,44 @@ git_fetch_url
 			expires_at: None,
 		})),
 	);
-	github_api.expect(
-		Expectation::matching(request::method_path(
-			"POST",
-			format!("/app/installations/{}/access_tokens", 1),
-		))
-		.respond_with(json_encoded(github::InstallationToken {
-			token: "DOES_NOT_MATTER".to_string(),
-			expires_at: None,
-		})),
-	);
-	github_api.expect(
-		Expectation::matching(request::method_path(
-			"GET",
-			format!("/orgs/{}/teams/{}", org, CORE_DEVS_GROUP),
-		))
-		.respond_with(json_encoded(vec![placeholder_user.clone()])),
-	);
-	github_api.expect(
-		Expectation::matching(request::method_path(
-			"GET",
-			format!("/orgs/{}/teams/{}", org, SUBSTRATE_TEAM_LEADS_GROUP),
-		))
-		.respond_with(json_encoded(vec![placeholder_user.clone()])),
-	);
+
+	for (team_name, team_id) in &[
+		(CORE_DEVS_GROUP, coredevs_team_id),
+		(SUBSTRATE_TEAM_LEADS_GROUP, teamleads_team_id),
+	] {
+		github_api.expect(
+			Expectation::matching(request::method_path(
+				"GET",
+				format!("/orgs/{}/teams/{}", org, team_name),
+			))
+			.times(0..)
+			.respond_with(json_encoded(github::Team { id: *team_id })),
+		);
+		github_api.expect(
+			Expectation::matching(request::method_path(
+				"GET",
+				format!("/teams/{}/members", team_id),
+			))
+			.times(0..)
+			.respond_with(json_encoded(vec![placeholder_user.clone()])),
+		);
+	}
 
 	let substrate_pr_number = 1;
 	let substrate_repository_url =
 		format!("https://github.com/{}/{}", org, substrate_repo_name);
 	let substrate_pr_url =
 		format!("{}/pull/{}", substrate_repository_url, substrate_pr_number);
-	let substrate_pr_api_url = &format!(
-		"{}/repos/{}/{}/pull/{}",
-		api_base_url, org, substrate_repo_name, substrate_pr_number
+	let substrate_pr_api_path = &format!(
+		"/repos/{}/{}/pull/{}",
+		org, substrate_repo_name, substrate_pr_number
 	);
+	let substrate_pr_issue_api_path = &format!(
+		"/repos/{}/{}/issues/{}",
+		org, substrate_repo_name, substrate_pr_number
+	);
+	let substrate_pr_api_url =
+		&format!("{}/{}", api_base_url, substrate_pr_api_path);
 	github_api.expect(
 		Expectation::matching(request::method_path(
 			"PUT",
@@ -308,7 +249,7 @@ git_fetch_url
 	github_api.expect(
 		Expectation::matching(request::method_path(
 			"GET",
-			format!("{}/reviews", substrate_pr_api_url,),
+			format!("/{}/reviews", substrate_pr_api_path,),
 		))
 		.respond_with(json_encoded(vec![github::Review {
 			id: 1,
@@ -316,60 +257,51 @@ git_fetch_url
 			state: Some(github::ReviewState::Approved),
 		}])),
 	);
-
-	let companion_pr_number: i64 = 1;
-	let companion_repository_url = "https://github.com/companion/companion";
-	let companion_merge_tries = Arc::new(AtomicUsize::new(0));
 	github_api.expect(
 		Expectation::matching(request::method_path(
 			"GET",
 			format!(
-				"/repos/{}/{}/pulls/{}",
-				org, companion_repo_name, companion_pr_number
+				"/repos/{}/{}/commits/{}/status",
+				org, substrate_repo_name, placeholder_sha
 			),
 		))
-		.respond_with(json_encoded(github::PullRequest {
-			body: Some("".to_string()),
-			number: companion_pr_number,
-			labels: vec![],
-			mergeable: Some(true),
-			html_url: substrate_pr_url.clone(),
-			url: substrate_pr_api_url.clone(),
-			user: Some(placeholder_user.clone()),
-			repository: Some(substrate_repo.clone()),
-			base: github::Base {
-				ref_field: Some("master".to_string()),
-				sha: Some(companion_head_sha.clone()),
-				repo: Some(github::HeadRepo {
-					name: companion_repo_name.to_string(),
-					owner: Some(companion_user.clone()),
-				}),
-			},
-			head: Some(github::Head {
-				ref_field: Some("develop".to_string()),
-				sha: Some(placeholder_sha.to_string()),
-				repo: Some(github::HeadRepo {
-					name: companion_repo_name.to_string(),
-					owner: Some(companion_user.clone()),
-				}),
-			}),
+		.respond_with(json_encoded(github::CombinedStatus {
+			state: github::StatusState::Success,
+			statuses: vec![github::Status {
+				id: 1,
+				context: "DOES_NOT_MATTER".to_string(),
+				state: github::StatusState::Success,
+			}],
 		})),
 	);
 	github_api.expect(
 		Expectation::matching(request::method_path(
-			"PUT",
+			"GET",
 			format!(
-				"/repos/{}/{}/pulls/{}/merge",
-				org, companion_repo_name, companion_pr_number
+				"/repos/{}/{}/commits/{}/check-runs",
+				org, substrate_repo_name, placeholder_sha
 			),
 		))
-		.respond_with(move || {
-			if companion_merge_tries.fetch_add(1, Ordering::SeqCst) == 1 {
-				status_code(405)
-			} else {
-				status_code(200)
-			}
-		}),
+		.respond_with(json_encoded(github::CheckRuns {
+			check_runs: vec![github::CheckRun {
+				id: 1,
+				name: "DOES_NOT_MATTER".to_string(),
+				status: github::CheckRunStatus::Completed,
+				conclusion: Some(github::CheckRunConclusion::Success),
+				head_sha: placeholder_sha.to_string(),
+			}],
+		})),
+	);
+	github_api.expect(
+		Expectation::matching(request::method_path(
+			"POST",
+			format!("{}/comments", substrate_pr_issue_api_path,),
+		))
+		.respond_with(
+			status_code(201)
+				.append_header("Content-Type", "application/json")
+				.body(serde_json::to_string(&json!({})).unwrap()),
+		),
 	);
 
 	let placeholder_private_key = "-----BEGIN PRIVATE KEY-----
@@ -474,4 +406,6 @@ GcZ0izY/30012ajdHY+/QK5lsMoxTnn0skdS+spLxaS5ZEO4qvPVb8RAoCkWMMal
 	)
 	.await
 	.unwrap();
+
+	assert_snapshot!(utils::read_snapshot((&log_dir).path().to_path_buf()));
 }

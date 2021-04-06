@@ -24,7 +24,6 @@ pub async fn setup(
 		.init();
 	}
 
-	log::info!("nice!",);
 	let db = DB::open_default(&config.db_path)?;
 
 	let matrix_bot = if let Some(matrix_bot) = matrix_bot {

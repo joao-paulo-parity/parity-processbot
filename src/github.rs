@@ -307,7 +307,6 @@ pub enum IssueCommentAction {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CheckRuns {
-	pub total_count: i64,
 	pub check_runs: Vec<CheckRun>,
 }
 

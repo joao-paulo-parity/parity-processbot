@@ -92,23 +92,6 @@ impl GithubBot {
 			.context(error::Http)
 	}
 
-	/// Fetches the list of comments on an issue.
-	pub async fn get_issue_comments(
-		&self,
-		owner: &str,
-		repo_name: &str,
-		issue_number: i64,
-	) -> Result<Vec<github::Comment>> {
-		let url = format!(
-			"{base}/repos/{owner}/{repo}/issues/{issue_number}/comments",
-			base = github::base_api_url(),
-			owner = owner,
-			repo = repo_name,
-			issue_number = issue_number
-		);
-		self.client.get_all(&url).await
-	}
-
 	/// Adds a comment to an issue.
 	pub async fn create_issue_comment(
 		&self,
