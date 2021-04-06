@@ -120,6 +120,7 @@ description = "substrate"
 		.arg(format!("--port={}", git_daemon_port))
 		.arg("--base-path=.")
 		.arg("--export-all")
+		.kill_on_drop(true)
 		.stdout(Stdio::null())
 		.current_dir(git_daemon_dir.path())
 		.spawn()
