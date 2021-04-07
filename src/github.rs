@@ -63,6 +63,11 @@ impl PullRequest {
 				field: "pull_request.head.sha",
 			})
 	}
+	pub fn base_sha(&self) -> Result<&String> {
+		self.base.sha.as_ref().context(MissingField {
+			field: "pull_request.head.sha",
+		})
+	}
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]

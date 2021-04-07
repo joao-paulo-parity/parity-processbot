@@ -10,8 +10,8 @@ use crate::{
 };
 
 struct CompanionUpdateResult {
-	pub master_ref: String,
-	pub updated_sha: String,
+	pub base_sha: String,
+	pub head_sha: String,
 }
 
 async fn update_companion_repository(
@@ -140,7 +140,7 @@ async fn update_companion_repository(
 	// this reference does not change between attempts, then the master merge commit will have the
 	// same effect as the previous attempt, resulting in failure again, thus it's not meaningful to
 	// keep retrying in that case.
-	let master_ref = {
+	let base_sha = {
 		let output = run_cmd_with_output(
 			"git",
 			&["rev-parse", &owner_remote_branch],
@@ -170,7 +170,7 @@ async fn update_companion_repository(
 	.await;
 	if let Err(e) = master_merge_result {
 		log::info!("Aborting companion update due to master merge failure");
-		run_cmd(
+		let _ = run_cmd(
 			"git",
 			&["merge", "--abort"],
 			&repo_dir,
@@ -179,7 +179,7 @@ async fn update_companion_repository(
 				are_errors_silenced: false,
 			}),
 		)
-		.await?;
+		.await;
 		return Err(e);
 	}
 
@@ -238,7 +238,7 @@ async fn update_companion_repository(
 		"Getting the head SHA after a companion update in {}",
 		&contributor_remote_branch
 	);
-	let updated_sha = {
+	let head_sha = {
 		let output = run_cmd_with_output(
 			"git",
 			&["rev-parse", "HEAD"],
@@ -255,10 +255,7 @@ async fn update_companion_repository(
 			.to_string()
 	};
 
-	Ok(CompanionUpdateResult {
-		updated_sha,
-		master_ref,
-	})
+	Ok(CompanionUpdateResult { head_sha, base_sha })
 }
 
 fn companion_parse(body: &str) -> Option<(String, String, String, i64)> {
@@ -353,7 +350,7 @@ async fn perform_companion_update(
 			comp_pr.number,
 			&comp_pr.html_url,
 			"parity-processbot[bot]",
-			&companion_update_result.updated_sha,
+			&companion_update_result.head_sha,
 			db,
 		)
 		.await?;
