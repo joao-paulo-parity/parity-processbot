@@ -1,4 +1,6 @@
-use crate::{cmd::*, error::*, github::*, github_bot::GithubBot, Result};
+use crate::{cmd::*, error::*, github_bot::GithubBot, Result};
+use snafu::ResultExt;
+use std::path::Path;
 
 pub struct RepositoryUpdateOutput {
 	pub base_sha: String,
@@ -179,27 +181,42 @@ pub async fn update_repository(
 		return Err(e);
 	}
 
-	if let Some(update_strategy) = update_strategy {
-		match update_strategy {
-			RepositoryUpdateStrategy::FromSubstrateToPolkadotCompanion => {
-				// `cargo update` should normally make changes to the lockfile with the latest SHAs
-				// from Github
-				run_cmd(
-					"cargo",
-					&["update", "-vp", "sp-io"],
-					&repo_dir,
-					CommandMessage::Configured(CommandMessageConfiguration {
-						secrets_to_hide,
-						are_errors_silenced: false,
-					}),
-				)
-				.await?;
+	match update_strategy {
+		Some(RepositoryUpdateStrategy::FromSubstrateToPolkadotCompanion) => {
+			// `cargo update` should normally make changes to the lockfile with the latest SHAs
+			// from Github
+			run_cmd(
+				"cargo",
+				&["update", "-vp", "sp-io"],
+				&repo_dir,
+				CommandMessage::Configured(CommandMessageConfiguration {
+					secrets_to_hide,
+					are_errors_silenced: false,
+				}),
+			)
+			.await?;
 
-				// Check if `cargo update` resulted in any changes. If the master merge commit
-				// already had the latest lockfile then no changes might have been made.
-				let changes_after_update_output = run_cmd_with_output(
+			// Check if `cargo update` resulted in any changes. If the master merge commit
+			// already had the latest lockfile then no changes might have been made.
+			let changes_after_update_output = run_cmd_with_output(
+				"git",
+				&["status", "--short"],
+				&repo_dir,
+				CommandMessage::Configured(CommandMessageConfiguration {
+					secrets_to_hide,
+					are_errors_silenced: false,
+				}),
+			)
+			.await?;
+			if !String::from_utf8_lossy(
+				&(&changes_after_update_output).stdout[..],
+			)
+			.trim()
+			.is_empty()
+			{
+				run_cmd(
 					"git",
-					&["status", "--short"],
+					&["commit", "-am", "update Substrate"],
 					&repo_dir,
 					CommandMessage::Configured(CommandMessageConfiguration {
 						secrets_to_hide,
@@ -207,28 +224,9 @@ pub async fn update_repository(
 					}),
 				)
 				.await?;
-				if !String::from_utf8_lossy(
-					&(&changes_after_update_output).stdout[..],
-				)
-				.trim()
-				.is_empty()
-				{
-					run_cmd(
-						"git",
-						&["commit", "-am", "update Substrate"],
-						&repo_dir,
-						CommandMessage::Configured(
-							CommandMessageConfiguration {
-								secrets_to_hide,
-								are_errors_silenced: false,
-							},
-						),
-					)
-					.await?;
-				}
 			}
 		}
-	}
+	};
 
 	run_cmd(
 		"git",
@@ -263,4 +261,14 @@ pub async fn update_repository(
 	};
 
 	Ok(RepositoryUpdateOutput { head_sha, base_sha })
+}
+
+pub fn result_t2<T1, T2>(r1: Result<T1>, r2: Result<T2>) -> Result<(T1, T2)> {
+	match r1 {
+		Ok(r1) => match r2 {
+			Ok(r2) => (r1, r2),
+			Err(e) => Err(e),
+		},
+		Err(e) => Err(e),
+	}
 }

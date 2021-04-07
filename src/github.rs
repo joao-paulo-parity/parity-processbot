@@ -63,10 +63,36 @@ impl PullRequest {
 				field: "pull_request.head.sha",
 			})
 	}
-	pub fn base_sha(&self) -> Result<&String> {
-		self.base.sha.as_ref().context(MissingField {
-			field: "pull_request.head.sha",
-		})
+	pub fn base_owner(&self) -> Result<&String> {
+		self.base
+			.repo
+			.as_ref()
+			.context(MissingField {
+				field: "pull_request.base.repo",
+			})?
+			.owner
+			.as_ref()
+			.context(MissingField {
+				field: "pull_request.base.repo.owner",
+			})?
+			.login
+	}
+	pub fn base_name(&self) -> Result<&String> {
+		self.base
+			.repo
+			.as_ref()
+			.context(MissingField {
+				field: "pull_request.base.repo",
+			})?
+			.name
+	}
+	pub fn head_ref(&self) -> Result<&String> {
+		self.head
+			.as_ref()
+			.context(MissingField {
+				field: "pull_request.base.repo",
+			})?
+			.ref_field
 	}
 }
 
