@@ -332,27 +332,27 @@ async fn perform_companion_update(
 				..
 			}),
 		..
-	} = comp_pr.clone()
+	} = &comp_pr
 	{
 		log::info!("Updating companion {}", html_url);
 		let companion_update_result = update_companion_repository(
 			github_bot,
-			&owner,
-			&repo,
-			&contributor,
-			&contributor_repo,
-			&contributor_branch,
+			owner,
+			repo,
+			contributor,
+			contributor_repo,
+			contributor_branch,
 		)
 		.await?;
 
 		log::info!("Companion updated; waiting for checks on {}", html_url);
 		wait_to_merge(
 			github_bot,
-			&owner,
-			&repo,
+			owner,
+			repo,
 			comp_pr.number,
 			&comp_pr.html_url,
-			&format!("parity-processbot[bot]"),
+			"parity-processbot[bot]",
 			&companion_update_result.updated_sha,
 			db,
 		)
