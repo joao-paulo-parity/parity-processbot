@@ -131,6 +131,7 @@ async fn perform_companion_update(
 		wait_to_merge(
 			github_bot,
 			db,
+			&companion_update_result.head_sha,
 			MergeRequest {
 				contributor,
 				contributor_repo,
@@ -139,7 +140,6 @@ async fn perform_companion_update(
 				number,
 				html_url,
 				requested_by: "parity-processbot[bot]".to_string(),
-				head_sha: companion_update_result.head_sha,
 			},
 		)
 		.await?;

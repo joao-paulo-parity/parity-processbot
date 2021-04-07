@@ -226,6 +226,7 @@ pub async fn update_repository(
 				.await?;
 			}
 		}
+		None => (),
 	};
 
 	run_cmd(
@@ -266,7 +267,7 @@ pub async fn update_repository(
 pub fn result_t2<T1, T2>(r1: Result<T1>, r2: Result<T2>) -> Result<(T1, T2)> {
 	match r1 {
 		Ok(r1) => match r2 {
-			Ok(r2) => (r1, r2),
+			Ok(r2) => Ok((r1, r2)),
 			Err(e) => Err(e),
 		},
 		Err(e) => Err(e),

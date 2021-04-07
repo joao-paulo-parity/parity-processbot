@@ -64,7 +64,8 @@ impl PullRequest {
 			})
 	}
 	pub fn base_owner(&self) -> Result<&String> {
-		self.base
+		Ok(&self
+			.base
 			.repo
 			.as_ref()
 			.context(MissingField {
@@ -75,24 +76,30 @@ impl PullRequest {
 			.context(MissingField {
 				field: "pull_request.base.repo.owner",
 			})?
-			.login
+			.login)
 	}
 	pub fn base_name(&self) -> Result<&String> {
-		self.base
+		Ok(&self
+			.base
 			.repo
 			.as_ref()
 			.context(MissingField {
 				field: "pull_request.base.repo",
 			})?
-			.name
+			.name)
 	}
-	pub fn head_ref(&self) -> Result<&String> {
-		self.head
+	pub fn head_ref(&self) -> Result<&str> {
+		Ok(self
+			.head
 			.as_ref()
 			.context(MissingField {
-				field: "pull_request.base.repo",
+				field: "pull_request.head",
 			})?
 			.ref_field
+			.as_ref()
+			.context(MissingField {
+				field: "pull_request.head.ref",
+			})?)
 	}
 }
 
@@ -384,9 +391,6 @@ pub enum Payload {
 	CommitStatus {
 		sha: String,
 		state: StatusState,
-		description: String,
-		target_url: String,
-		repository: Repository,
 	},
 	CheckRun {
 		check_run: CheckRun,
