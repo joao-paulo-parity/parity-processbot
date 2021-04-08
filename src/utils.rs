@@ -1,5 +1,8 @@
 use crate::{cmd::*, error::*, github_bot::GithubBot, Result};
+use once_cell::sync::OnceCell;
+use parking_lot::Mutex;
 use snafu::ResultExt;
+use std::collections::HashSet;
 use std::path::Path;
 
 pub struct RepositoryUpdateOutput {
@@ -9,6 +12,21 @@ pub struct RepositoryUpdateOutput {
 
 pub enum RepositoryUpdateStrategy {
 	FromSubstrateToPolkadotCompanion,
+}
+
+static PREV_TEMP_BRANCHES: OnceCell<Mutex<HashSet<String>>> = OnceCell::new();
+fn get_unique_branch_name(branch: &str) -> String {
+	let mut prev_branches = PREV_TEMP_BRANCHES
+		.get_or_init(|| Mutex::new(HashSet::new()))
+		.lock();
+	let mut branch = branch.to_string();
+	let random_str = loop {
+		branch.push_str("_tmp");
+		if prev_branches.insert(branch.clone()) {
+			break branch;
+		}
+	};
+	random_str
 }
 
 pub async fn update_repository(
@@ -96,13 +114,28 @@ pub async fn update_repository(
 
 	// The contributor's branch might exist from a previous run (not expected for a fresh clone).
 	// If so, delete it so that it can be recreated.
+	// First switch to a temporary branch so that the contributor's branch can be deleted
+	// regardless of previous errors in this directory (Git does not allow deletion of the
+	// currently-checked-out branch, which might be the case).
+	let temp_branch_name = get_unique_branch_name(contributor_branch);
+	run_cmd(
+		"git",
+		&["checkout", "-b", &temp_branch_name],
+		&repo_dir,
+		CommandMessage::Configured(CommandMessageConfiguration {
+			secrets_to_hide,
+			are_errors_silenced: false,
+		}),
+	)
+	.await?;
+	// Now recreate the contributor's branch
 	let _ = run_cmd(
 		"git",
 		&["branch", "-D", contributor_branch],
 		&repo_dir,
 		CommandMessage::Configured(CommandMessageConfiguration {
 			secrets_to_hide,
-			are_errors_silenced: true,
+			are_errors_silenced: false,
 		}),
 	)
 	.await;
@@ -116,13 +149,24 @@ pub async fn update_repository(
 		}),
 	)
 	.await?;
+	// Then clean up the temporary branch
+	run_cmd(
+		"git",
+		&["branch", "-D", &temp_branch_name],
+		&repo_dir,
+		CommandMessage::Configured(CommandMessageConfiguration {
+			secrets_to_hide,
+			are_errors_silenced: false,
+		}),
+	)
+	.await?;
 
+	// Ensure the owner branch has the latest remote changes so that the merge commit is always
+	// done with the most updated code from Github.
 	let owner_remote = "origin";
 	let owner_branch = "master";
 	let owner_remote_branch = format!("{}/{}", owner_remote, owner_branch);
 
-	// Ensure the owner branch has the latest remote changes so that the merge commit is always
-	// done with the most updated code from Github.
 	run_cmd(
 		"git",
 		&["fetch", owner_remote, &owner_branch],

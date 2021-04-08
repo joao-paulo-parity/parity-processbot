@@ -10,12 +10,11 @@ use parity_processbot::{
 use serde_json::json;
 use std::fs;
 use std::path::PathBuf;
-use std::process::Command;
 use std::process::Stdio;
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Arc;
 
 mod utils;
+
+use utils::*;
 
 //#[tokio::test]
 //async fn team_lead_merges_pr() {
@@ -38,7 +37,7 @@ mod utils;
 //let db_dir = tempfile::tempdir().unwrap();
 
 //let git_daemon_dir = tempfile::tempdir().unwrap();
-//let git_daemon_port = utils::get_available_port().unwrap();
+//let git_daemon_port = get_available_port().unwrap();
 //let git_fetch_url = &format!("git://127.0.0.1:{}", git_daemon_port);
 
 //let org = "org";
@@ -409,7 +408,7 @@ mod utils;
 //.await
 //.unwrap();
 
-//assert_snapshot!(utils::read_snapshot((&log_dir).path().to_path_buf()));
+//assert_snapshot!(read_snapshot((&log_dir).path().to_path_buf()));
 //}
 
 #[tokio::test]
@@ -434,8 +433,9 @@ async fn recover_outdated_master() {
 
 	let git_daemon_dir = tempfile::tempdir().unwrap();
 	//let git_daemon_dir = &*Box::leak(Box::new(tempfile::tempdir().unwrap()));
-	utils::clean_directory(git_daemon_dir.path().to_path_buf());
-	let git_daemon_port = utils::get_available_port().unwrap();
+	println!("{:?}", git_daemon_dir);
+	clean_directory(git_daemon_dir.path().to_path_buf());
+	let git_daemon_port = get_available_port().unwrap();
 	let git_fetch_url = &format!("git://127.0.0.1:{}", git_daemon_port);
 
 	let org = "org";
@@ -455,14 +455,12 @@ async fn recover_outdated_master() {
 		html_url: "".to_string(),
 	};
 	fs::create_dir_all(&substrate_repo_dir).unwrap();
-	Command::new("git")
-		.arg("init")
-		.arg("-b")
-		.arg("master")
-		.stdout(Stdio::null())
-		.current_dir(&substrate_repo_dir)
-		.spawn()
-		.unwrap();
+	run_cmd_with_dir(
+		"git",
+		&["init", "-b", "master"],
+		&substrate_repo_dir,
+		None,
+	);
 	fs::write(
 		&substrate_repo_dir.join("Cargo.toml"),
 		r#"
@@ -478,90 +476,48 @@ description = "substrate"
 	let substrate_src_dir = &substrate_repo_dir.join("src");
 	fs::create_dir_all(&substrate_src_dir).unwrap();
 	fs::write((&substrate_src_dir).join("main.rs"), "fn main() {}").unwrap();
-	log::info!("5?");
-	Command::new("git")
-		.arg("add")
-		.arg(".")
-		.current_dir(&substrate_repo_dir)
-		.stdout(Stdio::null())
-		.spawn()
-		.unwrap();
-	log::info!("6?");
-	Command::new("git")
-		.arg("commit")
-		.arg("-m")
-		.arg("init")
-		.stdout(Stdio::null())
-		.current_dir(&substrate_repo_dir)
-		.spawn()
-		.unwrap();
-	log::info!("7?");
-	let substrate_head_sha_cmd = Command::new("git")
-		.arg("rev-parse")
-		.arg("HEAD")
-		.current_dir(&substrate_repo_dir)
-		.output()
-		.unwrap();
-	let substrate_head_sha = String::from_utf8(substrate_head_sha_cmd.stdout)
-		.unwrap()
-		.trim()
-		.to_string();
-	log::info!("8?");
-	Command::new("ls")
-		.arg("-A")
-		.current_dir(&substrate_repo_dir)
-		.spawn()
-		.unwrap();
+	run_cmd_with_dir("git", &["add", "."], &substrate_repo_dir, None);
+	run_cmd_with_dir(
+		"git",
+		&["commit", "-m", "init"],
+		&substrate_repo_dir,
+		None,
+	);
+	let substrate_head_sha = &get_cmd_output_with_dir(
+		"git",
+		&["rev-parse", "HEAD"],
+		&substrate_repo_dir,
+	);
 
-	// Create outdated PR branch
-	Command::new("ls")
-		.arg("-A")
-		.current_dir(&substrate_repo_dir)
-		.spawn()
-		.unwrap();
-	log::info!("9?");
-	Command::new("git")
-		.arg("checkout")
-		.arg("-b")
-		.arg("pr")
-		.stdout(Stdio::null())
-		.current_dir(&substrate_repo_dir)
-		.spawn()
-		.unwrap();
+	// Create PR branch
+	run_cmd_with_dir(
+		"git",
+		&["checkout", "-b", "develop"],
+		&substrate_repo_dir,
+		Some(CmdConfiguration::SilentStderrStartingWith(&[
+			"Switched to a new branch",
+		])),
+	);
 
 	// Commit on master to make the PR branch outdated
-	log::info!("10?");
-	Command::new("ls")
-		.arg("-A")
-		.current_dir(&substrate_repo_dir)
-		.spawn()
-		.unwrap();
-	Command::new("git")
-		.arg("checkout")
-		.arg("master")
-		.stdout(Stdio::null())
-		.current_dir(&substrate_repo_dir)
-		.spawn()
-		.unwrap();
+	run_cmd_with_dir(
+		"git",
+		&["checkout", "master"],
+		&substrate_repo_dir,
+		Some(CmdConfiguration::SilentStderrStartingWith(&[
+			"Switched to branch",
+		])),
+	);
 	fs::write((&substrate_src_dir).join("foo.txt"), "").unwrap();
-	Command::new("git")
-		.arg("add")
-		.arg(".")
-		.stdout(Stdio::null())
-		.current_dir(&substrate_repo_dir)
-		.spawn()
-		.unwrap();
-	Command::new("git")
-		.arg("commit")
-		.arg("-m")
-		.arg("update")
-		.stdout(Stdio::null())
-		.current_dir(&substrate_repo_dir)
-		.spawn()
-		.unwrap();
+	run_cmd_with_dir(
+		"git",
+		&["commit", "-m", "update"],
+		&substrate_repo_dir,
+		None,
+	);
 
 	// Hold onto the git daemon process handle until the test is done
-	let _ = tokio::process::Command::new("git")
+	let mut git_daemon_handle = tokio::process::Command::new("git")
 		.arg("daemon")
 		.arg(format!("--port={}", git_daemon_port))
 		.arg("--base-path=.")
@@ -649,26 +605,23 @@ description = "substrate"
 			),
 		))
 		.respond_with(move || {
-			println!("{:?}", substrate_dir_path_1);
-			log::info!("2?");
-			Command::new("git")
-				.arg("checkout")
-				.arg("pr")
-				.stdout(Stdio::null())
-				.current_dir(substrate_dir_path_1)
-				.spawn()
-				.unwrap();
-			log::info!("3?");
-			let output = Command::new("git")
-				.arg("merge")
-				.arg("master")
-				.stdout(Stdio::piped())
-				.current_dir(substrate_dir_path_1)
-				.output()
-				.unwrap();
-			let result = if String::from_utf8_lossy(&output.stdout).trim()
-				== "Already updated."
-			{
+			run_cmd_with_dir(
+				"git",
+				&["checkout", "develop"],
+				substrate_dir_path_1,
+				Some(CmdConfiguration::SilentStderrStartingWith(&[
+					"Switched to branch",
+				])),
+			);
+			let merge_output = get_cmd_output_with_dir(
+				"git",
+				&["merge", "master"],
+				substrate_dir_path_1,
+			);
+			// Merge is only successful if contributor branch is up-to-date with master; simulates
+			// the failure caused by Github API when the PR is outdated due to branch protection
+			// rules.
+			let result = if merge_output == "Already updated." {
 				status_code(200)
 					.append_header("Content-Type", "application/json")
 					.body(serde_json::to_string(&json!({})).unwrap())
@@ -682,21 +635,22 @@ description = "substrate"
 						.unwrap(),
 					)
 			};
-			log::info!("4?");
-			Command::new("git")
-				.arg("merge")
-				.arg("--abort")
-				.stdout(Stdio::null())
-				.current_dir(substrate_dir_path_1)
-				.spawn()
-				.unwrap();
-			Command::new("git")
-				.arg("checkout")
-				.arg("master")
-				.stdout(Stdio::null())
-				.current_dir(substrate_dir_path_1)
-				.spawn()
-				.unwrap();
+			run_cmd_with_dir(
+				"git",
+				&["merge", "--abort"],
+				substrate_dir_path_1,
+				Some(CmdConfiguration::SilentStderrStartingWith(&[
+					"fatal: There is no merge to abort",
+				])),
+			);
+			run_cmd_with_dir(
+				"git",
+				&["checkout", "master"],
+				substrate_dir_path_1,
+				Some(CmdConfiguration::SilentStderrStartingWith(&[
+					"Switched to branch",
+				])),
+			);
 			result
 		}),
 	);
@@ -730,7 +684,7 @@ description = "substrate"
 			repository: Some(substrate_repo.clone()),
 			base: github::Base {
 				ref_field: Some("master".to_string()),
-				sha: Some(substrate_head_sha),
+				sha: Some(substrate_head_sha.to_string()),
 				repo: Some(github::HeadRepo {
 					name: substrate_repo_name.to_string(),
 					owner: Some(substrate_user.clone()),
@@ -907,5 +861,6 @@ GcZ0izY/30012ajdHY+/QK5lsMoxTnn0skdS+spLxaS5ZEO4qvPVb8RAoCkWMMal
 	.await
 	.unwrap();
 
-	assert_snapshot!(utils::read_snapshot((&log_dir).path().to_path_buf()));
+	git_daemon_handle.kill().unwrap();
+	assert_snapshot!(read_snapshot((&log_dir).path().to_path_buf()));
 }
