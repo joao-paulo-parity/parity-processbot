@@ -524,7 +524,6 @@ pub fn parse_repository_full_name(full_name: &str) -> Option<(String, String)> {
 
 pub static BASE_API_URL: OnceCell<String> = OnceCell::new();
 const DEFAULT_BASE_API_URL: &str = "https://api.github.com";
-
 pub fn base_api_url() -> String {
 	BASE_API_URL
 		.get()

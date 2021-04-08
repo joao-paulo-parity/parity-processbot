@@ -421,6 +421,11 @@ async fn recover_outdated_master() {
 		.start()
 		.unwrap();
 
+	let repositories_dir = tempfile::tempdir().unwrap();
+	parity_processbot::utils::REPOSITORIES_DIR
+		.set(repositories_dir.path().to_owned())
+		.unwrap();
+
 	let bot_username = "bot";
 	let placeholder_user = github::User {
 		login: "foo".to_string(),
@@ -531,7 +536,9 @@ description = "substrate"
 	let github_api = Server::run();
 	let api_base_url = &github_api.url("").to_string();
 	let api_base_url = &api_base_url[0..api_base_url.len() - 1];
-	github::BASE_API_URL.set(api_base_url.to_owned()).unwrap();
+	parity_processbot::github::BASE_API_URL
+		.set(api_base_url.to_owned())
+		.unwrap();
 	github_api.expect(
 		Expectation::matching(request::method_path(
 			"GET",

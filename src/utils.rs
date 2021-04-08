@@ -3,7 +3,7 @@ use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use snafu::ResultExt;
 use std::collections::HashSet;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 pub struct RepositoryUpdateOutput {
 	pub base_sha: String,
@@ -29,6 +29,7 @@ fn get_unique_branch_name(branch: &str) -> String {
 	random_str
 }
 
+pub static REPOSITORIES_DIR: OnceCell<PathBuf> = OnceCell::new();
 pub async fn update_repository(
 	github_bot: &GithubBot,
 	owner: &str,
@@ -39,21 +40,46 @@ pub async fn update_repository(
 	update_strategy: Option<RepositoryUpdateStrategy>,
 ) -> Result<RepositoryUpdateOutput> {
 	let token = github_bot.client.auth_key().await?;
-	let secrets_to_hide = [token.as_str()];
-	let secrets_to_hide = Some(&secrets_to_hide[..]);
+	let secrets_to_hide = vec![token.clone()];
+	let (repositories_dir, repo_dir, secrets_to_hide, dirs_to_hide) = {
+		if let Some(repositories_dir) = REPOSITORIES_DIR.get() {
+			let repo_path = repositories_dir.join(owner_repo);
+			let repo_dir = repo_path.to_str().unwrap();
+			(
+				repositories_dir.clone().to_str().unwrap().to_string(),
+				repo_dir.to_string(),
+				Some([&secrets_to_hide[..], &[repo_dir.to_string()]].concat()),
+				Some(vec![repositories_dir
+					.clone()
+					.to_str()
+					.unwrap()
+					.to_string()]),
+			)
+		} else {
+			(
+				".".to_string(),
+				format!("./{}", owner_repo),
+				Some(secrets_to_hide),
+				None,
+			)
+		}
+	};
+	let secrets_to_hide = secrets_to_hide.as_ref();
+	let dirs_to_hide = dirs_to_hide.as_ref();
 
-	let repo_dir = format!("./{}", owner_repo);
 	let (owner_remote_address, owner_repository_domain) =
 		github_bot.get_fetch_components(owner, owner_repo, &token);
 
 	if Path::new(&repo_dir).exists() {
 		log::info!("{} is already cloned; skipping", &owner_repository_domain);
 	} else {
-		run_cmd_in_cwd(
+		run_cmd(
 			"git",
 			&["clone", "-v", &owner_remote_address],
+			repositories_dir,
 			CommandMessage::Configured(CommandMessageConfiguration {
 				secrets_to_hide,
+				dirs_to_hide,
 				are_errors_silenced: false,
 			}),
 		)
@@ -73,6 +99,7 @@ pub async fn update_repository(
 		&repo_dir,
 		CommandMessage::Configured(CommandMessageConfiguration {
 			secrets_to_hide,
+			dirs_to_hide,
 			are_errors_silenced: true,
 		}),
 	)
@@ -85,6 +112,7 @@ pub async fn update_repository(
 			&repo_dir,
 			CommandMessage::Configured(CommandMessageConfiguration {
 				secrets_to_hide,
+				dirs_to_hide,
 				are_errors_silenced: false,
 			}),
 		)
@@ -96,6 +124,7 @@ pub async fn update_repository(
 		&repo_dir,
 		CommandMessage::Configured(CommandMessageConfiguration {
 			secrets_to_hide,
+			dirs_to_hide,
 			are_errors_silenced: false,
 		}),
 	)
@@ -107,6 +136,7 @@ pub async fn update_repository(
 		&repo_dir,
 		CommandMessage::Configured(CommandMessageConfiguration {
 			secrets_to_hide,
+			dirs_to_hide,
 			are_errors_silenced: false,
 		}),
 	)
@@ -124,6 +154,7 @@ pub async fn update_repository(
 		&repo_dir,
 		CommandMessage::Configured(CommandMessageConfiguration {
 			secrets_to_hide,
+			dirs_to_hide,
 			are_errors_silenced: false,
 		}),
 	)
@@ -135,6 +166,7 @@ pub async fn update_repository(
 		&repo_dir,
 		CommandMessage::Configured(CommandMessageConfiguration {
 			secrets_to_hide,
+			dirs_to_hide,
 			are_errors_silenced: false,
 		}),
 	)
@@ -145,6 +177,7 @@ pub async fn update_repository(
 		&repo_dir,
 		CommandMessage::Configured(CommandMessageConfiguration {
 			secrets_to_hide,
+			dirs_to_hide,
 			are_errors_silenced: false,
 		}),
 	)
@@ -156,6 +189,7 @@ pub async fn update_repository(
 		&repo_dir,
 		CommandMessage::Configured(CommandMessageConfiguration {
 			secrets_to_hide,
+			dirs_to_hide,
 			are_errors_silenced: false,
 		}),
 	)
@@ -173,6 +207,7 @@ pub async fn update_repository(
 		&repo_dir,
 		CommandMessage::Configured(CommandMessageConfiguration {
 			secrets_to_hide,
+			dirs_to_hide,
 			are_errors_silenced: false,
 		}),
 	)
@@ -189,6 +224,7 @@ pub async fn update_repository(
 			&repo_dir,
 			CommandMessage::Configured(CommandMessageConfiguration {
 				secrets_to_hide,
+				dirs_to_hide,
 				are_errors_silenced: false,
 			}),
 		)
@@ -206,6 +242,7 @@ pub async fn update_repository(
 		&repo_dir,
 		CommandMessage::Configured(CommandMessageConfiguration {
 			secrets_to_hide,
+			dirs_to_hide,
 			are_errors_silenced: false,
 		}),
 	)
@@ -218,6 +255,7 @@ pub async fn update_repository(
 			&repo_dir,
 			CommandMessage::Configured(CommandMessageConfiguration {
 				secrets_to_hide,
+				dirs_to_hide,
 				are_errors_silenced: false,
 			}),
 		)
@@ -235,6 +273,7 @@ pub async fn update_repository(
 				&repo_dir,
 				CommandMessage::Configured(CommandMessageConfiguration {
 					secrets_to_hide,
+					dirs_to_hide,
 					are_errors_silenced: false,
 				}),
 			)
@@ -248,6 +287,7 @@ pub async fn update_repository(
 				&repo_dir,
 				CommandMessage::Configured(CommandMessageConfiguration {
 					secrets_to_hide,
+					dirs_to_hide,
 					are_errors_silenced: false,
 				}),
 			)
@@ -264,6 +304,7 @@ pub async fn update_repository(
 					&repo_dir,
 					CommandMessage::Configured(CommandMessageConfiguration {
 						secrets_to_hide,
+						dirs_to_hide,
 						are_errors_silenced: false,
 					}),
 				)
@@ -279,6 +320,7 @@ pub async fn update_repository(
 		&repo_dir,
 		CommandMessage::Configured(CommandMessageConfiguration {
 			secrets_to_hide,
+			dirs_to_hide,
 			are_errors_silenced: false,
 		}),
 	)
@@ -295,6 +337,7 @@ pub async fn update_repository(
 			&repo_dir,
 			CommandMessage::Configured(CommandMessageConfiguration {
 				secrets_to_hide,
+				dirs_to_hide,
 				are_errors_silenced: false,
 			}),
 		)
