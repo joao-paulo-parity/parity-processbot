@@ -1,4 +1,4 @@
-use crate::{cmd::*, error::*, github_bot::GithubBot, Result};
+use crate::{cmd::*, constants::*, error::*, github_bot::GithubBot, Result};
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use snafu::ResultExt;
@@ -38,6 +38,7 @@ pub async fn update_repository(
 	contributor_repo: &str,
 	contributor_branch: &str,
 	update_strategy: Option<RepositoryUpdateStrategy>,
+	merge_done_in: &str,
 ) -> Result<RepositoryUpdateOutput> {
 	let token = github_bot.client.auth_key().await?;
 	let secrets_to_hide = vec![token.clone()];
@@ -265,11 +266,18 @@ pub async fn update_repository(
 
 	match update_strategy {
 		Some(RepositoryUpdateStrategy::FromSubstrateToPolkadotCompanion) => {
-			// `cargo update` should normally make changes to the lockfile with the latest SHAs
-			// from Github
+			// `cargo update` should normally make changes to the lockfile with the latest SHAs from Github
 			run_cmd(
 				"cargo",
-				&["update", "-vp", "sp-io"],
+				&[
+					"update",
+					"-vp",
+					if merge_done_in == MAIN_REPO_FOR_STAGING {
+						MAIN_REPO_FOR_STAGING
+					} else {
+						"sp-io"
+					},
+				],
 				&repo_dir,
 				CommandMessage::Configured(CommandMessageConfiguration {
 					secrets_to_hide,

@@ -2,6 +2,7 @@ use regex::RegexBuilder;
 use rocksdb::DB;
 
 use crate::{
+	constants::*,
 	error::*,
 	github::*,
 	github_bot::GithubBot,
@@ -31,11 +32,11 @@ async fn update_companion_repository(
 	.await
 }
 
-fn companion_parse(body: &str) -> Option<(String, String, String, i64)> {
+fn companion_parse(body: &str) -> Option<IssueDetailsWithRepositoryURL> {
 	companion_parse_long(body).or(companion_parse_short(body))
 }
 
-fn companion_parse_long(body: &str) -> Option<(String, String, String, i64)> {
+fn companion_parse_long(body: &str) -> Option<IssueDetailsWithRepositoryURL> {
 	let re = RegexBuilder::new(COMPANION_LONG_REGEX!())
 		.case_insensitive(true)
 		.build()
@@ -53,7 +54,7 @@ fn companion_parse_long(body: &str) -> Option<(String, String, String, i64)> {
 	Some((html_url, owner, repo, number))
 }
 
-fn companion_parse_short(body: &str) -> Option<(String, String, String, i64)> {
+fn companion_parse_short(body: &str) -> Option<IssueDetailsWithRepositoryURL> {
 	let re = RegexBuilder::new(COMPANION_SHORT_REGEX!())
 		.case_insensitive(true)
 		.build()
@@ -158,15 +159,22 @@ async fn detect_then_update_companion(
 	pr: &PullRequest,
 	db: &DB,
 ) -> Result<()> {
-	if merge_done_in == "substrate" {
+	if merge_done_in == "substrate" || merge_done_in == MAIN_REPO_FOR_STAGING {
 		log::info!("Checking for companion.");
 		if let Some((html_url, owner, repo, number)) =
 			pr.body.as_ref().map(|body| companion_parse(body)).flatten()
 		{
 			log::info!("Found companion {}", html_url);
-			perform_companion_update(github_bot, db, &owner, &repo, number)
-				.await
-				.map_err(|e| e.map_issue((owner, repo, number)))?;
+			perform_companion_update(
+				github_bot,
+				db,
+				&owner,
+				&repo,
+				number,
+				merge_done_in,
+			)
+			.await
+			.map_err(|e| e.map_issue((owner, repo, number)))?;
 		} else {
 			log::info!("No companion found.");
 		}

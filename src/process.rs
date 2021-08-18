@@ -119,8 +119,8 @@ pub async fn get_process(
 			let keep = projects.iter().any(|pj| pj.name == p.project_name);
 			if !keep {
 				let warning = format!(
-					"'{}' doesn not match any projects in repository '{}'",
-					p.project_name, repo_name,
+					"'{}' does not match any projects in {}'s {}",
+					p.project_name, repo_name, PROCESS_FILE
 				);
 				log::info!("{}", &warning);
 				warnings.push(warning);
@@ -210,20 +210,9 @@ mod tests {
 
 	#[test]
 	fn test_process_json() {
-		let p = serde_json::from_str::<Vec<ProcessInfo>>(include_str!(
+		serde_json::from_str::<Vec<ProcessInfo>>(include_str!(
 			"../Process.json"
 		))
-		.expect("parse json");
-		assert_eq!(
-			p,
-			vec![ProcessInfo {
-				project_name: format!("parity-processbot"),
-				owner: format!("sjeohp"),
-				delegated_reviewer: None,
-				whitelist: vec![],
-				matrix_room_id: format!("!VDLSjvBpNqqgyMDIBO:matrix.parity.io"),
-				backlog: None,
-			},]
-		);
+		.unwrap();
 	}
 }

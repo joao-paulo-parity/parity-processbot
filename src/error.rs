@@ -3,6 +3,9 @@ use snafu::Snafu;
 // TODO this really should be struct { repository, owner, number }
 pub type IssueDetails = (String, String, i64);
 
+// TODO this really should be struct { repository_url, repository, owner, number }
+pub type IssueDetailsWithRepositoryURL = IssueDetailsWithRepositoryURL;
+
 #[derive(Debug, Snafu)]
 #[snafu(visibility = "pub")]
 pub enum Error {
@@ -193,8 +196,13 @@ pub enum Error {
 		err: String,
 	},
 
-	#[snafu(display("Error was skipped",))]
-	Skipped {},
+	#[snafu(display(
+		"Merge failure was skipped (will be solved later): {}",
+		msg
+	))]
+	MergeFailureWillBeSolvedLater {
+		msg: String,
+	},
 }
 
 impl Error {
