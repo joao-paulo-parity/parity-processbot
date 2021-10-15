@@ -398,13 +398,15 @@ pub async fn check_all_companions_are_mergeable(
 	requested_by: &str,
 ) -> Result<()> {
 	let companions = match pr.parse_all_companions() {
-		Some(companions) => companions,
+		Some(companions) => {
+			if companions.is_empty() {
+				return Ok(());
+			} else {
+				companions
+			}
+		}
 		_ => return Ok(()),
 	};
-	if companions.is_empty() {
-		log::info!("Found no companions in the body of {}", pr.html_url);
-		return Ok(());
-	}
 
 	let AppState { github_bot, .. } = state;
 	for (html_url, owner, repo, number) in companions {
@@ -610,15 +612,15 @@ async fn update_then_merge_companion(
 	} else {
 		log::info!("Companion updated; waiting for checks on {}", html_url);
 
-		let companion_children = match companion.parse_all_mr_base() {
-			Some(companion_children) => companion_children,
-			None => return Ok(()),
-		};
+		let companion_children = companion.parse_all_mr_base();
 
-		let msg = if companion_children.is_empty() {
-			None
-		} else {
+		let msg = if let Some(true) = companion_children
+			.as_ref()
+			.map(|children| !children.is_empty())
+		{
 			Some("Waiting for companions' statuses and this PR's statuses")
+		} else {
+			None
 		};
 
 		wait_to_merge(
@@ -630,7 +632,7 @@ async fn update_then_merge_companion(
 				number: companion.number,
 				html_url: companion.html_url,
 				requested_by: requested_by.to_owned(),
-				companion_children: Some(companion_children),
+				companion_children: companion_children,
 			},
 			msg,
 		)
@@ -650,12 +652,15 @@ pub async fn merge_companions(
 
 	let companions_groups = {
 		let companions = match pr.parse_all_companions() {
-			Some(companions) => companions,
+			Some(companions) => {
+				if companions.is_empty() {
+					return Ok(());
+				} else {
+					companions
+				}
+			}
 			None => return Ok(()),
 		};
-		if companions.is_empty() {
-			return Ok(());
-		}
 
 		let mut companions_groups: HashMap<
 			String,
