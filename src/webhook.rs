@@ -274,8 +274,8 @@ pub async fn handle_payload(
 		),
 	};
 
-	// From this point onwards we'll clean the SHA from the database if this is a fatal error which
-	// stops the merge process
+	// From this point onwards we'll clean the SHA from the database if this is a error which stops
+	// the merge process
 
 	// Without the SHA we'll not be able to fetch the database for more context, so exit early
 	let sha = match sha {
@@ -285,14 +285,25 @@ pub async fn handle_payload(
 
 	// If it's not an error then don't bother with going further
 	let err = match result {
-		Ok(_) => return (MergeCancelOutcome::WasCancelled, Ok(())),
+		Ok(_) => return (MergeCancelOutcome::WasNotCancelled, Ok(())),
 		Err(err) => err,
 	};
 
 	// If this error does not interrupt the merge process, then don't bother with going further
 	if !err.stops_merge_attempt() {
+		log::info!(
+			"SHA {} did not have its merge attempt stopped because error does not stop the merge attempt {:?}",
+			sha,
+			err
+		);
 		return (MergeCancelOutcome::WasNotCancelled, Err(err));
 	};
+
+	log::info!(
+		"SHA {} will have its merge attempt stopped due to {:?}",
+		sha,
+		err
+	);
 
 	match state.db.get(sha.as_bytes()) {
 		Ok(Some(bytes)) => {
