@@ -481,7 +481,10 @@ async fn checks_and_status(state: &AppState, sha: &str) -> Result<()> {
 	// indirectly through a companion, and so we do not need to dig into it's parental relationship
 	// because they are supposed to be processed as an independent unit of work for the merge
 	// process.
-	let (requested_by, parent, pr) = match db.get(sha.as_bytes()).context(Db)? {
+	let (was_sha_in_db, requested_by, parent, pr) = match db
+		.get(sha.as_bytes())
+		.context(Db)?
+	{
 		Some(bytes) => {
 			let mr: MergeRequest =
 				bincode::deserialize(&bytes).context(Bincode)?;
@@ -498,7 +501,7 @@ async fn checks_and_status(state: &AppState, sha: &str) -> Result<()> {
 				sha,
 				mr
 			);
-			(mr.requested_by, None, pr)
+			(true, mr.requested_by, None, pr)
 		}
 		None => match get_match_from_registered_companions(state, sha).await? {
 			Some(((sha, parent), pr)) => {
@@ -508,7 +511,12 @@ async fn checks_and_status(state: &AppState, sha: &str) -> Result<()> {
 					sha,
 					parent
 				);
-				(parent.requested_by.to_owned(), Some((sha, parent)), pr)
+				(
+					false,
+					parent.requested_by.to_owned(),
+					Some((sha, parent)),
+					pr,
+				)
 			}
 			None => return Ok(()),
 		},
@@ -527,7 +535,7 @@ async fn checks_and_status(state: &AppState, sha: &str) -> Result<()> {
 			return Ok(());
 		}
 
-		if sha != pr.head.sha {
+		if was_sha_in_db && sha != pr.head.sha {
 			return Err(Error::HeadChanged {
 				expected: sha.to_string(),
 				actual: pr.head.sha.to_owned(),
@@ -540,7 +548,7 @@ async fn checks_and_status(state: &AppState, sha: &str) -> Result<()> {
 		}
 
 		if let Err(err) =
-			check_merge_is_allowed(state, &pr, &requested_by, None).await
+			check_merge_is_allowed(state, &pr, &requested_by, None, &vec![]).await
 		{
 			return match err {
 				Error::InvalidCompanionStatus { ref value, .. } => {
@@ -561,7 +569,7 @@ async fn checks_and_status(state: &AppState, sha: &str) -> Result<()> {
 			// Check if this PR is indeed still a companion of the parent (the parent's description might
 			// have been edited since this PR was registered as a companion)
 			let is_still_companion = parent_pr
-				.parse_all_companions()
+				.parse_all_companions(&vec![])
 				.map(|companions| companions
 					.iter()
 					.any(|(html_url, _, _, _)| {
@@ -576,6 +584,7 @@ async fn checks_and_status(state: &AppState, sha: &str) -> Result<()> {
 						&parent_pr,
 						&requested_by,
 						None,
+						&vec![]
 					)
 					.await
 					{
@@ -733,7 +742,7 @@ async fn checks_and_status(state: &AppState, sha: &str) -> Result<()> {
 		}
 
 		if let Err(err) =
-			check_merge_is_allowed(state, &pr, &requested_by, None).await
+			check_merge_is_allowed(state, &pr, &requested_by, None, &vec![]).await
 		{
 			return match err {
 				Error::InvalidCompanionStatus { ref value, .. } => {
@@ -820,36 +829,35 @@ async fn handle_command(
 				number: pr.number,
 				html_url: pr.html_url.to_owned(),
 				requested_by: requested_by.to_owned(),
-				companion_children: pr.parse_all_mr_base(),
+				companion_children: pr.parse_all_mr_base(&vec![]),
 			};
 
-			let should_wait_for_companions =
-				match check_merge_is_allowed(state, &pr, requested_by, None)
-					.await
-				{
-					Ok(_) => false,
-					Err(err) => match err {
-						Error::InvalidCompanionStatus { ref value, .. } => {
-							match value {
-								InvalidCompanionStatusValue::Pending => {
-									match cmd {
-										MergeCommentCommand::Normal => true,
-										MergeCommentCommand::Force => false,
-									}
-								}
-								InvalidCompanionStatusValue::Failure => {
-									match cmd {
-										MergeCommentCommand::Normal => {
-											return Err(err)
-										}
-										MergeCommentCommand::Force => false,
-									}
-								}
-							}
+			let should_wait_for_companions = match check_merge_is_allowed(
+				state,
+				&pr,
+				requested_by,
+				None,
+				&vec![],
+			)
+			.await
+			{
+				Ok(_) => false,
+				Err(err) => match err {
+					Error::InvalidCompanionStatus { ref value, .. } => {
+						match value {
+							InvalidCompanionStatusValue::Pending => match cmd {
+								MergeCommentCommand::Normal => true,
+								MergeCommentCommand::Force => false,
+							},
+							InvalidCompanionStatusValue::Failure => match cmd {
+								MergeCommentCommand::Normal => return Err(err),
+								MergeCommentCommand::Force => false,
+							},
 						}
-						_ => return Err(err),
-					},
-				};
+					}
+					_ => return Err(err),
+				},
+			};
 
 			match cmd {
 				MergeCommentCommand::Normal => {
@@ -1119,6 +1127,7 @@ pub async fn check_merge_is_allowed(
 	pr: &PullRequest,
 	requested_by: &str,
 	min_approvals_required: Option<usize>,
+	companion_reference_trail: &Vec<(String, String)>,
 ) -> Result<MergeAllowedOutcome> {
 	let AppState {
 		github_bot, config, ..
@@ -1141,7 +1150,13 @@ pub async fn check_merge_is_allowed(
 		});
 	}
 
-	check_all_companions_are_mergeable(state, &pr, &requested_by).await?;
+	check_all_companions_are_mergeable(
+		state,
+		&pr,
+		&requested_by,
+		companion_reference_trail,
+	)
+	.await?;
 
 	let min_approvals = match min_approvals_required {
 		Some(min_approvals_required) => min_approvals_required,
@@ -1648,6 +1663,7 @@ pub async fn merge(
 			pr,
 			requested_by,
 			Some(min_approvals_required),
+			&vec![]
 		)
 		.await {
 			Ok(MergeAllowedOutcome::Allowed) => None,
