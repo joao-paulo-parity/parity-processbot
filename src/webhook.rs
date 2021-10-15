@@ -1716,10 +1716,14 @@ pub async fn merge(
 	Ok(Ok(()))
 }
 
-fn get_troubleshoot_msg() -> String {
+fn get_troubleshoot_msg(state: &AppState) -> String {
 	return format!(
-		"Merge failed. Check out the [criteria for merge](https://github.com/paritytech/parity-processbot#criteria-for-merge). If you're not meeting the approval count, check if the approvers are members of {} or {}.",
+		"Merge failed. Check out the [criteria for merge](https://github.com/paritytech/parity-processbot#criteria-for-merge). If you're not meeting the approval count, check if the approvers are members of [{}](https://github.com/orgs/{}/teams/{}/members) or [{}](https://github.com/orgs/{}/teams/{}/members).",
 		SUBSTRATE_TEAM_LEADS_GROUP,
+		state.config.installation_login,
+		SUBSTRATE_TEAM_LEADS_GROUP,
+		CORE_DEVS_GROUP,
+		state.config.installation_login,
 		CORE_DEVS_GROUP
 	);
 }
@@ -1739,20 +1743,20 @@ fn display_errors_along_the_way(errors: Option<Vec<String>>) -> String {
 		.unwrap_or_else(|| "".to_string())
 }
 
-fn format_error(err: Error) -> String {
+fn format_error(state: &AppState, err: Error) -> String {
 	match err {
 		Error::ProcessInfo { errors } => {
 			format!(
 				PROCESS_INFO_ERROR_TEMPLATE!(),
 				PROCESS_FILE,
 				display_errors_along_the_way(errors),
-				get_troubleshoot_msg()
+				get_troubleshoot_msg(state)
 			)
 		}
 		Error::Approval { errors } => format!(
 			"Approval criteria was not satisfied.\n\n{}\n\n{}",
 			display_errors_along_the_way(errors),
-			get_troubleshoot_msg()
+			get_troubleshoot_msg(state)
 		),
 		Error::Response {
 			ref body,
@@ -1783,7 +1787,7 @@ pub async fn handle_error(
 				Error::MergeFailureWillBeSolvedLater { .. } => (),
 				err => {
 					let msg = {
-						let description = format_error(err);
+						let description = format_error(state, err);
 						let caption = match merge_cancel_outcome {
 							MergeCancelOutcome::ShaNotFound  => "",
 							MergeCancelOutcome::WasCancelled => "Merge cancelled due to error.",
