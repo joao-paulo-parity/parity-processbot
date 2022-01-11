@@ -85,6 +85,10 @@ spec:
               value: {{ .Values.app.TEAM_LEADS_TEAM }}
             - name: DB_PATH
               value: /usr/local/share/db
+						- name: START_FROM_CWD
+							value: "true"
+						- name: REPOSITORIES_PATH
+							value: /usr/local/share/repositories
             - name: WEBHOOK_SECRET
               valueFrom:
                 secretKeyRef:
