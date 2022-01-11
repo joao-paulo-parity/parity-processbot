@@ -43,11 +43,6 @@ uninstall-staging:
   environment:
     name: staging
 
-uninstall-prod:
-  <<: *uninstall-deployment
-  environment:
-    name: staging
-
 #### stage:                        check
 
 check:
