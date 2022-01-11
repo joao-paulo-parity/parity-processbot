@@ -21,11 +21,32 @@ default:
     - linux-docker
 
 stages:
+  - pre
   - check
   - test
   - build
   - dockerize
   - deploy
+
+#### stage: pre
+.uninstall-deployment: &uninstall-deployment
+  tags:
+    - kubernetes-parity-build
+  stage: pre
+  interruptible: true
+  script:
+    - helm uninstall "$KUBE_NAMESPACE" --namespace "$KUBE_NAMESPACE"
+    - exit 1
+
+uninstall-staging:
+  <<: *uninstall-deployment
+  environment:
+    name: staging
+
+uninstall-prod:
+  <<: *uninstall-deployment
+  environment:
+    name: staging
 
 #### stage:                        check
 
