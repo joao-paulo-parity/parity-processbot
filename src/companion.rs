@@ -9,6 +9,7 @@ use tokio::time::delay_for;
 
 use crate::{
 	cmd::*,
+	constants::PR_CUSTOM_REVIEW_STATUS,
 	error::*,
 	github::*,
 	webhook::{
@@ -522,14 +523,14 @@ pub async fn check_all_companions_are_mergeable(
 		.await?
 		.1;
 		let reviews_are_passing = latest_statuses
-			.get("Check reviews")
+			.get(PR_CUSTOM_REVIEW_STATUS)
 			.map(|(_, state)| state == &StatusState::Success)
 			.unwrap_or(false);
 		if !reviews_are_passing {
 			return Err(Error::Message {
 				msg: format!(
-					"pr-custom-review is not passing for {}",
-					&companion.html_url
+					"pr-custom-review (status: {}) is not passing for {}",
+					PR_CUSTOM_REVIEW_STATUS, &companion.html_url
 				),
 			});
 		}
