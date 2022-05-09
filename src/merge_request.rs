@@ -464,7 +464,7 @@ pub async fn check_merge_is_allowed(
 	pr: &GithubPullRequest,
 	requested_by: &str,
 	companion_reference_trail: &[CompanionReferenceTrailItem],
-) -> Result<()> {
+) -> Result<bool> {
 	if !pr.mergeable.unwrap_or(false) {
 		return Err(Error::Message {
 			msg: format!("Github API says {} is not mergeable", pr.html_url),

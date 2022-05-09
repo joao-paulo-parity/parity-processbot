@@ -11,7 +11,10 @@ use snafu::ResultExt;
 use tokio::time::delay_for;
 
 use crate::{
-	core::{get_commit_statuses, process_dependents_after_merge, AppState},
+	core::{
+		get_commit_checks, get_commit_statuses, process_dependents_after_merge,
+		AppState, Status,
+	},
 	error::*,
 	github::*,
 	merge_request::{
@@ -474,21 +477,19 @@ pub async fn check_all_companions_are_mergeable(
 	pr: &GithubPullRequest,
 	requested_by: &str,
 	companion_reference_trail: &[CompanionReferenceTrailItem],
-) -> Result<()> {
+) -> Result<bool> {
 	let companions = match pr.parse_all_companions(companion_reference_trail) {
 		Some(companions) => {
 			if companions.is_empty() {
-				return Ok(());
+				return Ok(true);
 			} else {
 				companions
 			}
 		}
-		_ => return Ok(()),
+		_ => return Ok(true),
 	};
 
-	let AppState {
-		gh_client, config, ..
-	} = state;
+	let AppState { gh_client, .. } = state;
 	for PullRequestDetailsWithHtmlUrl {
 		html_url,
 		owner,
@@ -533,34 +534,52 @@ pub async fn check_all_companions_are_mergeable(
 			});
 		}
 
-		if !config.disable_org_checks {
-			/*
-				FIXME: Get rid of this ugly hack once the Companion Build System doesn't
-				ignore the companion's CI
-			*/
-			let latest_statuses = get_commit_statuses(
-				state,
-				&companion.base.repo.owner.login,
-				&companion.base.repo.name,
-				&companion.head.sha,
-				&companion.html_url,
-				false,
-			)
-			.await?
-			.1;
+		if !companion.mergeable.unwrap_or(false) {
+			return Err(Error::Message {
+				msg: format!("Companion {} is not mergeable", &html_url),
+			});
+		}
 
-			const CHECK_REVIEWS_STATUS: &str = "Check reviews";
-			let reviews_are_passing = latest_statuses
-				.get(CHECK_REVIEWS_STATUS)
-				.map(|(_, state, _)| state == &GithubCommitStatusState::Success)
-				.unwrap_or(false);
-			if !reviews_are_passing {
+		let (status_outcome, _) = get_commit_statuses(
+			state,
+			&companion.base.repo.owner.login,
+			&companion.base.repo.name,
+			&companion.head.sha,
+			&companion.html_url,
+			false,
+		)
+		.await?;
+		match status_outcome {
+			Status::Success => (()),
+			Status::Pending => return Ok(false),
+			Status::Failure => {
 				return Err(Error::Message {
 					msg: format!(
-						"\"{}\" status is not passing for {}",
-						CHECK_REVIEWS_STATUS, &companion.html_url
+						"Companion {} has failed commit statuses",
+						&companion.html_url
 					),
-				});
+				})
+			}
+		}
+
+		let checks_outcome = get_commit_checks(
+			&state.gh_client,
+			&companion.base.repo.owner.login,
+			&companion.base.repo.name,
+			&companion.head.sha,
+			&companion.html_url,
+		)
+		.await?;
+		match checks_outcome {
+			Status::Success => (()),
+			Status::Pending => return Ok(false),
+			Status::Failure => {
+				return Err(Error::Message {
+					msg: format!(
+						"Companion {} has failed checks",
+						&companion.html_url
+					),
+				})
 			}
 		}
 
@@ -586,7 +605,7 @@ pub async fn check_all_companions_are_mergeable(
 		.await?;
 	}
 
-	Ok(())
+	Ok(true)
 }
 
 #[async_recursion]
