@@ -43,10 +43,7 @@ pub struct MergeRequest {
 }
 
 pub enum MergeRequestCleanupReason<'a> {
-	AfterMerge,
 	AfterSHAUpdate(&'a String),
-	Cancelled,
-	Error,
 }
 // Removes a pull request from the database (e.g. when it has been merged) and
 // executes side-effects related to the kind of trigger for this function
@@ -178,20 +175,7 @@ pub async fn cleanup_merge_request(
 	);
 
 	match reason {
-		MergeRequestCleanupReason::Error
-		| MergeRequestCleanupReason::Cancelled => {
-			for dependent in related_dependents.values() {
-				let _ = cleanup_merge_request(
-					state,
-					&dependent.sha,
-					&dependent.owner,
-					&dependent.repo,
-					dependent.number,
-					reason,
-				);
-			}
-		}
-		MergeRequestCleanupReason::AfterSHAUpdate(updated_sha) => {
+		Some(MergeRequestCleanupReason::AfterSHAUpdate(updated_sha)) => {
 			for mut dependent in related_dependents.into_values() {
 				let mut was_updated = false;
 				dependent.dependencies =
@@ -228,7 +212,18 @@ pub async fn cleanup_merge_request(
 				}
 			}
 		}
-		MergeRequestCleanupReason::AfterMerge => {}
+		None => {
+			for dependent in related_dependents.values() {
+				let _ = cleanup_merge_request(
+					state,
+					&dependent.sha,
+					&dependent.owner,
+					&dependent.repo,
+					dependent.number,
+					reason,
+				);
+			}
+		}
 	}
 
 	log::info!(
@@ -291,7 +286,7 @@ pub async fn handle_merged_pull_request(
 		&pr.base.repo.owner.login,
 		&pr.base.repo.name,
 		pr.number,
-		&MergeRequestCleanupReason::AfterMerge,
+		None,
 	)
 	.await
 	.map(|_| true);
@@ -383,7 +378,7 @@ pub async fn merge_pull_request(
 				&pr.base.repo.owner.login,
 				&pr.base.repo.name,
 				pr.number,
-				&MergeRequestCleanupReason::AfterMerge,
+				None,
 			)
 			.await
 			{

@@ -275,12 +275,7 @@ pub async fn handle_github_payload(
 			{
 				Ok(mr) => {
 					let merge_cancel_outcome = match cleanup_merge_request(
-						state,
-						&sha,
-						&mr.owner,
-						&mr.repo,
-						mr.number,
-						&MergeRequestCleanupReason::Cancelled,
+						state, &sha, &mr.owner, &mr.repo, mr.number, None,
 					)
 					.await
 					{

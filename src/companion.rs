@@ -639,9 +639,7 @@ pub async fn update_companion(
 				requested_by: (&comp.requested_by).into(),
 				// Set "was_updated: true" to avoid updating a branch more than once
 				was_updated: true,
-				// All dependencies should have been updated above, we won't update them
-				// again
-				dependencies: None,
+				dependencies: comp.dependencies.clone(),
 			},
 			msg,
 		)

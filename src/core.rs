@@ -445,9 +445,7 @@ pub async fn handle_dependents_for_merge_command(
 		..
 	} = state;
 
-	/*
-		Step 1: Collect all the dependents from the PRs' descriptions.
-	*/
+	// Collect all the dependents from the PRs' descriptions
 	let fetched_dependents = gh_client
 		.resolve_pr_dependents(config, pr, requested_by, &[])
 		.await?;
@@ -463,31 +461,35 @@ pub async fn handle_dependents_for_merge_command(
 	);
 
 	/*
-		Step 2: Update the dependents (and merge them right away if possible)
-
-		Update dependents which can be updated (i.e. those who have the PR which was
-		just merged as their *only* pending dependency)
+		Clean up all previous references to the PRs involved in this check because
+		we're starting a new chain of dependencies
 	*/
+	cleanup_merge_request(
+		state,
+		&pr.head.sha,
+		&pr.base.repo.owner.login,
+		&pr.base.repo.name,
+		pr.number,
+		None,
+	)?;
+	for dependent in &dependents {
+		cleanup_merged_pr(
+			state,
+			&dependent.sha,
+			&dependent.owner,
+			&dependent.repo,
+			dependent.number,
+			None,
+		)?;
+	}
+
+	// Step 2: Update the dependents
 	let mut updated_dependents: Vec<(String, &MergeRequest)> = vec![];
 	for dependent in &dependents {
-		let depends_on_another_pr = dependent
-			.dependencies
-			.as_ref()
-			.map(|dependencies| {
-				dependencies
-					.iter()
-					.any(|dependency| dependency.repo != pr.base.repo.name)
-			})
-			.unwrap_or(false);
 		match update_companion(
 			state,
 			dependent,
 			&MergeRequestQueuedMessage::Default,
-			// The dependent should always be registered to the database as a pending
-			// item since one of its dependencies just got merged, therefore it becomes
-			// eligible for merge in the future
-			true,
-			!depends_on_another_pr,
 		)
 		.await
 		{
@@ -776,7 +778,7 @@ pub async fn handle_command(
 				&pr.base.repo.owner.login,
 				&pr.base.repo.name,
 				pr.number,
-				&MergeRequestCleanupReason::Cancelled,
+				None,
 			)
 			.await?;
 
