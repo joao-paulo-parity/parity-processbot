@@ -459,7 +459,7 @@ async fn register_merge_request(
 	.context(error::Db)
 }
 
-pub async fn check_merge_is_allowed(
+pub async fn check_mergeability(
 	state: &AppState,
 	pr: &GithubPullRequest,
 	requested_by: &str,

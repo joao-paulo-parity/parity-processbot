@@ -1,5 +1,5 @@
 use std::{
-	collections::HashSet,
+	collections::{HashMap, HashSet},
 	iter::{FromIterator, Iterator},
 	path::Path,
 	time::Duration,
@@ -18,9 +18,9 @@ use crate::{
 	error::*,
 	github::*,
 	merge_request::{
-		check_merge_is_allowed, cleanup_merge_request,
-		handle_merged_pull_request, is_ready_to_merge, merge_pull_request,
-		queue_merge_request, MergeRequest, MergeRequestCleanupReason,
+		check_mergeability, cleanup_merge_request, handle_merged_pull_request,
+		is_ready_to_merge, merge_pull_request, queue_merge_request,
+		MergeRequest, MergeRequestCleanupReason, MergeRequestDependency,
 		MergeRequestQueuedMessage,
 	},
 	shell::*,
@@ -42,7 +42,7 @@ async fn update_pr_branch(
 	contributor: &str,
 	contributor_repo: &str,
 	contributor_branch: &str,
-	dependencies_to_update: &HashSet<&String>,
+	dependencies_to_update: &Vec<&MergeRequestDependency>,
 	number: i64,
 ) -> Result<String> {
 	let AppState {
@@ -280,76 +280,23 @@ async fn update_pr_branch(
 			source_to_update,
 			repo_dir
 		);
-		let cargo_lock_path = Path::new(&repo_dir).join("Cargo.lock");
-		let lockfile =
-			cargo_lock::Lockfile::load(cargo_lock_path).map_err(|err| {
-				Error::Message {
-					msg: format!(
-						"Failed to parse lockfile of {}: {:?}",
-						contributor_repo, err
-					),
-				}
-			})?;
-		let pkgs_in_companion: HashSet<String> = {
-			HashSet::from_iter(lockfile.packages.iter().filter_map(|pkg| {
-				if let Some(src) = pkg.source.as_ref() {
-					if src.url().as_str() == source_to_update {
-						Some(format!("{}:{}", pkg.name.as_str(), pkg.version))
-					} else {
-						None
-					}
-				} else {
-					None
-				}
-			}))
-		};
-		if !pkgs_in_companion.is_empty() {
-			let args = {
-				let mut args = vec!["update", "-v"];
-				args.extend(
-					pkgs_in_companion.iter().flat_map(|pkg| ["-p", pkg]),
-				);
-				args
-			};
-			run_cmd(
-				"cargo",
-				&args,
-				&repo_dir,
-				CommandMessage::Configured(CommandMessageConfiguration {
-					secrets_to_hide,
-					are_errors_silenced: false,
-				}),
-			)
-			.await?;
-		}
-	}
-
-	// Check if `cargo update` resulted in any changes. If the master merge commit already had an
-	// up-to-date lockfile then no changes might have been made.
-	let output = run_cmd_with_output(
-		"git",
-		&["status", "--short"],
-		&repo_dir,
-		CommandMessage::Configured(CommandMessageConfiguration {
-			secrets_to_hide,
-			are_errors_silenced: false,
-		}),
-	)
-	.await?;
-	if !String::from_utf8_lossy(&output.stdout[..])
-		.trim()
-		.is_empty()
-	{
 		run_cmd(
-			"git",
+			"reref",
 			&[
-				"commit",
-				"-am",
-				&format!("update lockfile for {:?}", dependencies_to_update),
+				"--match-git",
+				source_to_update,
+				"--remove-field",
+				"branch",
+				"--add-field",
+				"rev",
+				"--added-field-value",
+				&format!("refs/pulls/{}/head", dependency_to_update.number),
+				"--autocommit",
+				"--require-removed-field",
 			],
 			&repo_dir,
 			CommandMessage::Configured(CommandMessageConfiguration {
-				secrets_to_hide,
+				secrets_to_hide: None,
 				are_errors_silenced: false,
 			}),
 		)
@@ -596,7 +543,7 @@ pub async fn check_all_companions_are_mergeable(
 			next_trail
 		};
 
-		check_merge_is_allowed(
+		check_mergeability(
 			state,
 			&companion,
 			requested_by,
@@ -609,7 +556,7 @@ pub async fn check_all_companions_are_mergeable(
 }
 
 #[async_recursion]
-pub async fn update_companion_then_merge(
+pub async fn update_companion(
 	state: &AppState,
 	comp: &MergeRequest,
 	msg: &MergeRequestQueuedMessage,
@@ -639,111 +586,72 @@ pub async fn update_companion_then_merge(
 			}
 			(None, comp_pr)
 		} else {
-			check_merge_is_allowed(state, &comp_pr, &comp.requested_by, &[])
+			check_mergeability(state, &comp_pr, &comp.requested_by, &[])
 				.await?;
 
-			let dependencies_to_update =
-				if let Some(ref dependencies) = comp.dependencies {
-					HashSet::from_iter(
-						dependencies.iter().map(|dependency| &dependency.repo),
-					)
-				} else {
-					HashSet::new()
-				};
+			match comp.dependencies.as_ref() {
+				Some(dependencies) if !dependencies.is_empty() => {
+					log::info!(
+						"Updating {} including the following dependencies: {:?}",
+						comp_pr.html_url,
+						dependencies
+					);
 
-			if !all_dependencies_are_ready && !dependencies_to_update.is_empty()
-			{
-				if should_register_comp {
-					queue_merge_request(
+					let updated_sha = update_pr_branch(
 						state,
-						comp,
-						&MergeRequestQueuedMessage::None,
+						&comp_pr.base.repo.owner.login,
+						&comp_pr.base.repo.name,
+						&comp_pr.head.repo.owner.login,
+						&comp_pr.head.repo.name,
+						&comp_pr.head.ref_field,
+						dependencies,
+						comp_pr.number,
 					)
 					.await?;
+
+					// Wait a bit for the statuses to settle after we've updated the companion
+					delay_for(Duration::from_millis(
+						config.companion_status_settle_delay,
+					))
+					.await;
+
+					// Fetch it again since we've pushed some commits and therefore some status or check might have
+					// failed already
+					let comp_pr = gh_client
+						.pull_request(
+							&comp_pr.base.repo.owner.login,
+							&comp_pr.base.repo.name,
+							comp_pr.number,
+						)
+						.await?;
+
+					// Sanity-check: the PR's new HEAD sha should be the updated SHA we just
+					// pushed
+					if comp_pr.head.sha != updated_sha {
+						return Err(Error::HeadChanged {
+							expected: updated_sha.to_string(),
+							actual: comp_pr.head.sha.to_string(),
+						});
+					}
+
+					// Cleanup the pre-update SHA in order to prevent late status deliveries from
+					// removing the updated SHA from the database
+					cleanup_merge_request(
+						state,
+						&comp.sha,
+						&comp.owner,
+						&comp.repo,
+						comp.number,
+						&MergeRequestCleanupReason::AfterSHAUpdate(
+							&updated_sha,
+						),
+					)
+					.await?;
+
+					(Some(updated_sha), comp_pr)
 				}
-				return Ok(None);
 			}
-
-			log::info!(
-				"Updating {} including the following dependencies: {:?}",
-				comp_pr.html_url,
-				dependencies_to_update
-			);
-
-			let updated_sha = update_pr_branch(
-				state,
-				&comp_pr.base.repo.owner.login,
-				&comp_pr.base.repo.name,
-				&comp_pr.head.repo.owner.login,
-				&comp_pr.head.repo.name,
-				&comp_pr.head.ref_field,
-				&dependencies_to_update,
-				comp_pr.number,
-			)
-			.await?;
-
-			// Wait a bit for the statuses to settle after we've updated the companion
-			delay_for(Duration::from_millis(
-				config.companion_status_settle_delay,
-			))
-			.await;
-
-			// Fetch it again since we've pushed some commits and therefore some status or check might have
-			// failed already
-			let comp_pr = gh_client
-				.pull_request(
-					&comp_pr.base.repo.owner.login,
-					&comp_pr.base.repo.name,
-					comp_pr.number,
-				)
-				.await?;
-
-			// Sanity-check: the PR's new HEAD sha should be the updated SHA we just
-			// pushed
-			if comp_pr.head.sha != updated_sha {
-				return Err(Error::HeadChanged {
-					expected: updated_sha.to_string(),
-					actual: comp_pr.head.sha.to_string(),
-				});
-			}
-
-			// Cleanup the pre-update SHA in order to prevent late status deliveries from
-			// removing the updated SHA from the database
-			cleanup_merge_request(
-				state,
-				&comp.sha,
-				&comp.owner,
-				&comp.repo,
-				comp.number,
-				&MergeRequestCleanupReason::AfterSHAUpdate(&updated_sha),
-			)
-			.await?;
-
-			(Some(updated_sha), comp_pr)
 		};
-
-		if is_ready_to_merge(state, &comp_pr).await? {
-			log::info!(
-				"Attempting to merge {} after companion update",
-				comp_pr.html_url
-			);
-			if let Err(err) =
-				merge_pull_request(state, &comp_pr, &comp.requested_by).await?
-			{
-				match err {
-					Error::MergeFailureWillBeSolvedLater { .. } => {}
-					err => return Err(err),
-				};
-			} else {
-				process_dependents_after_merge(
-					state,
-					&comp_pr,
-					&comp.requested_by,
-				)
-				.await?;
-				return Ok(updated_sha);
-			}
-		}
 
 		log::info!(
 			"Companion updated; waiting for checks on {}",
