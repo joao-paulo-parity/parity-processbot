@@ -469,7 +469,7 @@ pub async fn check_all_companions_are_mergeable(
 		{
 			return Err(Error::Message {
 				msg: format!(
-					"Github API says \"Allow edits from maintainers\" is not enabled for {}. The bot would use that permission to push the lockfile update after merging this PR. Please check https://docs.github.com/en/github/collaborating-with-pull-requests/working-with-forks/allowing-changes-to-a-pull-request-branch-created-from-a-fork.",
+					"Github API says \"Allow edits from maintainers\" is not enabled for {}. The bot needs that permission to update the PR's lockfile. Please check https://docs.github.com/en/github/collaborating-with-pull-requests/working-with-forks/allowing-changes-to-a-pull-request-branch-created-from-a-fork.",
 					html_url
 				),
 			});
@@ -481,13 +481,13 @@ pub async fn check_all_companions_are_mergeable(
 			});
 		}
 
-		let (status_outcome, _) = get_commit_statuses(
+		let status_outcome = get_commit_statuses(
 			state,
 			&companion.base.repo.owner.login,
 			&companion.base.repo.name,
 			&companion.head.sha,
 			&companion.html_url,
-			false,
+			true,
 		)
 		.await?;
 		match status_outcome {
@@ -525,7 +525,6 @@ pub async fn check_all_companions_are_mergeable(
 		}
 
 		// Keeping track of the trail of references is necessary to break chains like A -> B -> C -> A
-		// TODO: of course this should be tested
 		let next_companion_reference_trail = {
 			let mut next_trail =
 				Vec::with_capacity(companion_reference_trail.len() + 1);
@@ -554,8 +553,6 @@ pub async fn update_companion(
 	state: &AppState,
 	comp: &MergeRequest,
 	msg: &MergeRequestQueuedMessage,
-	_should_register_comp: bool,
-	_all_dependencies_are_ready: bool,
 ) -> Result<Option<String>> {
 	let AppState {
 		gh_client, config, ..

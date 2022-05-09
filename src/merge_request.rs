@@ -94,7 +94,6 @@ pub async fn cleanup_merge_request(
 							== number
 						{
 							related_dependents.insert((&mr.sha).clone(), mr);
-							continue 'to_next_db_item;
 						}
 					}
 				}
@@ -340,7 +339,6 @@ pub async fn is_ready_to_merge(
 				true,
 			)
 			.await?
-			.0
 			{
 				Status::Success => Ok(true),
 				Status::Failure => Err(Error::StatusesFailed {
