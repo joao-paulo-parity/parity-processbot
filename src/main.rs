@@ -20,9 +20,7 @@ use parity_processbot::{
 	},
 	error::{handle_error, Bincode},
 	github::*,
-	merge_request::{
-		cleanup_merge_request, MergeRequest, MergeRequestCleanupReason,
-	},
+	merge_request::{cleanup_merge_request, MergeRequest},
 	server,
 };
 use snafu::ResultExt;
@@ -138,14 +136,9 @@ fn main() -> anyhow::Result<()> {
 										.await
 									{
 										let _ = cleanup_merge_request(
-											state,
-											&mr.sha,
-											&mr.owner,
-											&mr.repo,
-											mr.number,
-											&MergeRequestCleanupReason::Error,
-										)
-										.await;
+											state, &mr.sha, &mr.owner,
+											&mr.repo, mr.number, None,
+										);
 										handle_error(
 											PullRequestMergeCancelOutcome::WasCancelled,
 											err,

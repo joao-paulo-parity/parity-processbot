@@ -603,7 +603,7 @@ pub async fn update_companion(
 				if comp_pr.head.sha != updated_sha {
 					return Err(Error::HeadChanged {
 						expected: updated_sha.to_string(),
-						actual: comp_pr.head.sha.to_string(),
+						actual: comp_pr.head.sha,
 					});
 				}
 
@@ -615,9 +615,10 @@ pub async fn update_companion(
 					&comp.owner,
 					&comp.repo,
 					comp.number,
-					&MergeRequestCleanupReason::AfterSHAUpdate(&updated_sha),
-				)
-				.await?;
+					Some(&MergeRequestCleanupReason::AfterSHAUpdate(
+						&updated_sha,
+					)),
+				)?;
 
 				(Some(updated_sha), comp_pr)
 			}

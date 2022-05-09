@@ -9,10 +9,7 @@ use crate::{
 	companion::{
 		check_all_companions_are_mergeable, CompanionReferenceTrailItem,
 	},
-	core::{
-		get_commit_checks, get_commit_statuses, process_dependents_after_merge,
-		AppState, Status,
-	},
+	core::{get_commit_checks, get_commit_statuses, AppState, Status},
 	error::{self, Error},
 	github::GithubPullRequest,
 	types::Result,
@@ -47,20 +44,20 @@ pub enum MergeRequestCleanupReason<'a> {
 }
 // Removes a pull request from the database (e.g. when it has been merged) and
 // executes side-effects related to the kind of trigger for this function
-pub async fn cleanup_merge_request(
+pub fn cleanup_merge_request(
 	state: &AppState,
 	key_to_guarantee_deleted: &str,
 	owner: &str,
 	repo: &str,
 	number: i64,
-	reason: &MergeRequestCleanupReason<'_>,
+	reason: Option<&MergeRequestCleanupReason<'_>>,
 ) -> Result<()> {
 	let AppState { db, .. } = state;
 
 	let mut related_dependents = HashMap::new();
 
 	let db_iter = db.iterator(rocksdb::IteratorMode::Start);
-	'to_next_db_item: for (key, value) in db_iter {
+	for (key, value) in db_iter {
 		match bincode::deserialize::<MergeRequest>(&value)
 			.context(error::Bincode)
 		{
@@ -82,15 +79,14 @@ pub async fn cleanup_merge_request(
 							err
 						);
 					}
-				}
-
-				if let Some(dependencies) = &mr.dependencies {
+				} else if let Some(dependencies) = &mr.dependencies {
 					for dependency in dependencies.iter() {
 						if dependency.owner == owner
 							&& dependency.repo == repo && dependency.number
 							== number
 						{
-							related_dependents.insert((&mr.sha).clone(), mr);
+							related_dependents
+								.insert((&mr.sha).clone(), mr.clone());
 						}
 					}
 				}
@@ -274,13 +270,13 @@ pub async fn queue_merge_request(
 pub async fn handle_merged_pull_request(
 	state: &AppState,
 	pr: &GithubPullRequest,
-	requested_by: &str,
+	_requested_by: &str,
 ) -> Result<bool> {
 	if !pr.merged {
 		return Ok(false);
 	}
 
-	let was_cleaned_up = cleanup_merge_request(
+	cleanup_merge_request(
 		state,
 		&pr.head.sha,
 		&pr.base.repo.owner.login,
@@ -288,25 +284,7 @@ pub async fn handle_merged_pull_request(
 		pr.number,
 		None,
 	)
-	.await
-	.map(|_| true);
-
-	/*
-		It's not sane to try to handle the dependents if the cleanup went wrong since
-		that hints at some bug in the application
-	*/
-	if was_cleaned_up.is_ok() {
-		if let Err(err) =
-			process_dependents_after_merge(state, pr, requested_by).await
-		{
-			log::error!(
-				"Failed to process process_dependents_after_merge in cleanup_merged_pr due to {:?}",
-				err
-			);
-		}
-	}
-
-	was_cleaned_up
+	.map(|_| true)
 }
 
 pub async fn is_ready_to_merge(
@@ -379,9 +357,7 @@ pub async fn merge_pull_request(
 				&pr.base.repo.name,
 				pr.number,
 				None,
-			)
-			.await
-			{
+			) {
 				log::error!(
 					"Failed to cleanup PR on the database after merge: {}",
 					err

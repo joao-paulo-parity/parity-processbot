@@ -1,10 +1,12 @@
 use super::GithubClient;
 use crate::{
 	companion::CompanionReferenceTrailItem,
-	config::MainConfig,
+	core::AppState,
 	error::Error,
 	github::*,
-	merge_request::{MergeRequest, MergeRequestDependency},
+	merge_request::{
+		handle_merged_pull_request, MergeRequest, MergeRequestDependency,
+	},
 	types::Result,
 };
 
@@ -42,11 +44,13 @@ impl GithubClient {
 
 	pub async fn resolve_pr_dependents(
 		&self,
-		config: &MainConfig,
+		state: &AppState,
 		pr: &GithubPullRequest,
 		requested_by: &str,
 		companion_reference_trail: &[CompanionReferenceTrailItem],
 	) -> Result<Option<Vec<MergeRequest>>, Error> {
+		let AppState { config, .. } = state;
+
 		let companions =
 			match pr.parse_all_companions(companion_reference_trail) {
 				Some(companions) => companions,
@@ -67,16 +71,24 @@ impl GithubClient {
 				let comp_pr = self
 					.pull_request(&comp.owner, &comp.repo, comp.number)
 					.await?;
-				vec![MergeRequest {
-					was_updated: false,
-					sha: comp_pr.head.sha,
-					owner: comp_pr.base.repo.owner.login,
-					repo: comp_pr.base.repo.name,
-					number: comp_pr.number,
-					html_url: comp_pr.html_url,
-					requested_by: requested_by.into(),
-					dependencies: Some(vec![parent_dependency]),
-				}]
+				if handle_merged_pull_request(
+					state,
+					&comp_pr,
+					requested_by
+				).await? {
+					vec![]
+				} else {
+					vec![MergeRequest {
+						was_updated: false,
+						sha: comp_pr.head.sha,
+						owner: comp_pr.base.repo.owner.login,
+						repo: comp_pr.base.repo.name,
+						number: comp_pr.number,
+						html_url: comp_pr.html_url,
+						requested_by: requested_by.into(),
+						dependencies: Some(vec![parent_dependency]),
+					}]
+				}
 			} else {
 				let base_dependencies = vec![parent_dependency];
 
@@ -91,6 +103,10 @@ impl GithubClient {
 					let comp_pr = self
 						.pull_request(&comp.owner, &comp.repo, comp.number)
 						.await?;
+					if handle_merged_pull_request(state, &comp_pr, requested_by).await? {
+						continue;
+					};
+
 					let comp_owner = &comp_pr.base.repo.owner.login;
 					let comp_repo = &comp_pr.base.repo.name;
 

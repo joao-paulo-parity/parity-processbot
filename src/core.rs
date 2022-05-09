@@ -16,8 +16,7 @@ use crate::{
 	merge_request::{
 		check_all_mergeability, cleanup_merge_request,
 		handle_merged_pull_request, is_ready_to_merge, merge_pull_request,
-		queue_merge_request, MergeRequest, MergeRequestCleanupReason,
-		MergeRequestQueuedMessage,
+		queue_merge_request, MergeRequest, MergeRequestQueuedMessage,
 	},
 	types::Result,
 	vanity_service,
@@ -440,14 +439,14 @@ pub async fn handle_dependents_for_merge_command(
 ) -> Result<()> {
 	let AppState {
 		gh_client,
-		config,
+		config: _,
 		db,
 		..
 	} = state;
 
 	// Collect all the dependents from the PRs' descriptions
 	let fetched_dependents = gh_client
-		.resolve_pr_dependents(config, pr, requested_by, &[])
+		.resolve_pr_dependents(state, pr, requested_by, &[])
 		.await?;
 	let dependents = if let Some(dependents) = fetched_dependents {
 		dependents
@@ -473,7 +472,7 @@ pub async fn handle_dependents_for_merge_command(
 		None,
 	)?;
 	for dependent in &dependents {
-		cleanup_merged_pr(
+		cleanup_merge_request(
 			state,
 			&dependent.sha,
 			&dependent.owner,
@@ -483,7 +482,7 @@ pub async fn handle_dependents_for_merge_command(
 		)?;
 	}
 
-	// Step 2: Update the dependents
+	// Update the dependents
 	let mut updated_dependents: Vec<(String, &MergeRequest)> = vec![];
 	for dependent in &dependents {
 		match update_companion(
@@ -505,9 +504,8 @@ pub async fn handle_dependents_for_merge_command(
 					&dependent.owner,
 					&dependent.repo,
 					dependent.number,
-					&MergeRequestCleanupReason::Error,
-				)
-				.await;
+					None,
+				);
 				handle_error(
 					PullRequestMergeCancelOutcome::WasCancelled,
 					err.with_pull_request_details(PullRequestDetails {
@@ -607,9 +605,8 @@ pub async fn handle_dependents_for_merge_command(
 							&dependent_of_dependent.owner,
 							&dependent_of_dependent.repo,
 							dependent_of_dependent.number,
-							&MergeRequestCleanupReason::Error,
-						)
-						.await;
+							None,
+						);
 						handle_error(
 							PullRequestMergeCancelOutcome::WasCancelled,
 							Error::Message {
@@ -664,9 +661,8 @@ pub async fn handle_dependents_for_merge_command(
 				&dependent.owner,
 				&dependent.repo,
 				dependent.number,
-				&MergeRequestCleanupReason::Error,
-			)
-			.await;
+				None,
+			);
 			handle_error(
 				PullRequestMergeCancelOutcome::WasCancelled,
 				err,
@@ -726,7 +722,7 @@ pub async fn handle_command(
 								msg,
 							}) => {
 								let msg = format!(
-									"This PR cannot be merged **at the moment** due to: {}\n\nprocessbot expects that the problem will be solved automatically later and so the auto-merge process will be started. You can simply wait for now.\n\n",
+									"This PR cannot be merged **at the moment** due to: {}\n\nprocessbot expects that the problem will be solved eventually later and so the merge will be started now.\n\n",
 									msg
 								);
 								queue_merge_request(
@@ -765,9 +761,9 @@ pub async fn handle_command(
 						_ => (),
 					}
 				}
-			}
+			};
 
-			process_dependents_after_merge(state, pr, requested_by).await
+			Ok(())
 		}
 		CommentCommand::CancelMerge => {
 			log::info!("Deleting merge request for {}", pr.html_url);
@@ -779,8 +775,7 @@ pub async fn handle_command(
 				&pr.base.repo.name,
 				pr.number,
 				None,
-			)
-			.await?;
+			)?;
 
 			if let Err(err) = gh_client
 				.create_issue_comment(

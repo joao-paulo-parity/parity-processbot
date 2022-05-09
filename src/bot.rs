@@ -13,9 +13,7 @@ use crate::{
 	},
 	error::{self, handle_error, Error, PullRequestDetails},
 	github::*,
-	merge_request::{
-		cleanup_merge_request, MergeRequest, MergeRequestCleanupReason,
-	},
+	merge_request::{cleanup_merge_request, MergeRequest},
 	types::Result,
 	WEBHOOK_PARSING_ERROR_TEMPLATE,
 };
@@ -276,9 +274,7 @@ pub async fn handle_github_payload(
 				Ok(mr) => {
 					let merge_cancel_outcome = match cleanup_merge_request(
 						state, &sha, &mr.owner, &mr.repo, mr.number, None,
-					)
-					.await
-					{
+					) {
 						Ok(_) => {
 							log::info!(
 								"Merge of {} (sha {}) was cancelled due to {:?}",
