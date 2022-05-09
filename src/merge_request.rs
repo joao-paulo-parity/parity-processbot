@@ -459,19 +459,27 @@ async fn register_merge_request(
 	.context(error::Db)
 }
 
-pub async fn check_mergeability(
+pub fn check_mergeability(
+	_state: &AppState,
+	pr: &GithubPullRequest,
+) -> Result<()> {
+	if pr.mergeable.unwrap_or(false) {
+		log::info!("{} is mergeable", pr.html_url);
+		Ok(())
+	} else {
+		return Err(Error::Message {
+			msg: format!("Github API says {} is not mergeable", pr.html_url),
+		});
+	}
+}
+
+pub async fn check_all_mergeability(
 	state: &AppState,
 	pr: &GithubPullRequest,
 	requested_by: &str,
 	companion_reference_trail: &[CompanionReferenceTrailItem],
 ) -> Result<bool> {
-	if !pr.mergeable.unwrap_or(false) {
-		return Err(Error::Message {
-			msg: format!("Github API says {} is not mergeable", pr.html_url),
-		});
-	} else {
-		log::info!("{} is mergeable", pr.html_url);
-	}
+	check_mergeability(state, pr)?;
 
 	return check_all_companions_are_mergeable(
 		state,

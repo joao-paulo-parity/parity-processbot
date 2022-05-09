@@ -1,9 +1,4 @@
-use std::{
-	collections::{HashMap, HashSet},
-	iter::{FromIterator, Iterator},
-	path::Path,
-	time::Duration,
-};
+use std::{iter::Iterator, time::Duration};
 
 use async_recursion::async_recursion;
 use regex::RegexBuilder;
@@ -11,16 +6,13 @@ use snafu::ResultExt;
 use tokio::time::delay_for;
 
 use crate::{
-	core::{
-		get_commit_checks, get_commit_statuses, process_dependents_after_merge,
-		AppState, Status,
-	},
+	core::{get_commit_checks, get_commit_statuses, AppState, Status},
 	error::*,
 	github::*,
 	merge_request::{
-		check_mergeability, cleanup_merge_request, handle_merged_pull_request,
-		is_ready_to_merge, merge_pull_request, queue_merge_request,
-		MergeRequest, MergeRequestCleanupReason, MergeRequestDependency,
+		check_all_mergeability, check_mergeability, cleanup_merge_request,
+		handle_merged_pull_request, queue_merge_request, MergeRequest,
+		MergeRequestCleanupReason, MergeRequestDependency,
 		MergeRequestQueuedMessage,
 	},
 	shell::*,
@@ -35,15 +27,10 @@ pub struct CompanionReferenceTrailItem {
 	pub repo: String,
 }
 
-async fn update_pr_branch(
+async fn update_companion_pr_branch(
 	state: &AppState,
-	owner: &str,
-	owner_repo: &str,
-	contributor: &str,
-	contributor_repo: &str,
-	contributor_branch: &str,
-	dependencies_to_update: &Vec<&MergeRequestDependency>,
-	number: i64,
+	comp_pr: &GithubPullRequest,
+	dependencies_to_update: &Vec<MergeRequestDependency>,
 ) -> Result<String> {
 	let AppState {
 		gh_client, config, ..
@@ -53,6 +40,13 @@ async fn update_pr_branch(
 	// repositories might take a long time, thus causing the token to be
 	// invalidated after it finishes. In any case, the token generation API should
 	// backed by a cache, thus there's no problem with spamming the refresh calls.
+
+	let owner = &comp_pr.base.repo.owner.login;
+	let owner_repo = &comp_pr.base.repo.name;
+	let contributor = &comp_pr.head.repo.owner.login;
+	let contributor_repo = &comp_pr.head.repo.name;
+	let contributor_branch = &comp_pr.head.ref_field;
+	let number = comp_pr.number;
 
 	let repo_dir = config.repos_path.join(owner_repo);
 	let repo_dir_str = if let Some(repo_dir_str) = repo_dir.as_os_str().to_str()
@@ -271,8 +265,8 @@ async fn update_pr_branch(
 		let source_to_update = format!(
 			"{}/{}/{}{}",
 			config.github_source_prefix,
-			owner,
-			dependency_to_update,
+			dependency_to_update.owner,
+			dependency_to_update.repo,
 			config.github_source_suffix
 		);
 		log::info!(
@@ -284,7 +278,7 @@ async fn update_pr_branch(
 			"reref",
 			&[
 				"--match-git",
-				source_to_update,
+				&source_to_update,
 				"--remove-field",
 				"branch",
 				"--add-field",
@@ -497,7 +491,7 @@ pub async fn check_all_companions_are_mergeable(
 		)
 		.await?;
 		match status_outcome {
-			Status::Success => (()),
+			Status::Success => (),
 			Status::Pending => return Ok(false),
 			Status::Failure => {
 				return Err(Error::Message {
@@ -518,7 +512,7 @@ pub async fn check_all_companions_are_mergeable(
 		)
 		.await?;
 		match checks_outcome {
-			Status::Success => (()),
+			Status::Success => (),
 			Status::Pending => return Ok(false),
 			Status::Failure => {
 				return Err(Error::Message {
@@ -543,7 +537,7 @@ pub async fn check_all_companions_are_mergeable(
 			next_trail
 		};
 
-		check_mergeability(
+		check_all_mergeability(
 			state,
 			&companion,
 			requested_by,
@@ -560,8 +554,8 @@ pub async fn update_companion(
 	state: &AppState,
 	comp: &MergeRequest,
 	msg: &MergeRequestQueuedMessage,
-	should_register_comp: bool,
-	all_dependencies_are_ready: bool,
+	_should_register_comp: bool,
+	_all_dependencies_are_ready: bool,
 ) -> Result<Option<String>> {
 	let AppState {
 		gh_client, config, ..
@@ -577,80 +571,60 @@ pub async fn update_companion(
 			return Ok(None);
 		}
 
-		let (updated_sha, comp_pr) = if comp.was_updated {
-			if comp_pr.head.sha != comp.sha {
-				return Err(Error::HeadChanged {
-					expected: comp.sha.to_string(),
-					actual: comp_pr.head.sha.to_string(),
-				});
-			}
-			(None, comp_pr)
-		} else {
-			check_mergeability(state, &comp_pr, &comp.requested_by, &[])
-				.await?;
+		check_mergeability(state, &comp_pr)?;
 
-			match comp.dependencies.as_ref() {
-				Some(dependencies) if !dependencies.is_empty() => {
-					log::info!(
-						"Updating {} including the following dependencies: {:?}",
-						comp_pr.html_url,
-						dependencies
-					);
+		let (updated_sha, comp_pr) = match comp.dependencies.as_ref() {
+			Some(dependencies) if !dependencies.is_empty() => {
+				log::info!(
+					"Updating {} including the following dependencies: {:?}",
+					comp_pr.html_url,
+					dependencies
+				);
 
-					let updated_sha = update_pr_branch(
-						state,
+				let updated_sha =
+					update_companion_pr_branch(state, &comp_pr, dependencies)
+						.await?;
+
+				// Wait a bit for the statuses to settle after we've updated the companion
+				delay_for(Duration::from_millis(
+					config.companion_status_settle_delay,
+				))
+				.await;
+
+				// Fetch it again since we've pushed some commits and therefore some status or check might have
+				// failed already
+				let comp_pr = gh_client
+					.pull_request(
 						&comp_pr.base.repo.owner.login,
 						&comp_pr.base.repo.name,
-						&comp_pr.head.repo.owner.login,
-						&comp_pr.head.repo.name,
-						&comp_pr.head.ref_field,
-						dependencies,
 						comp_pr.number,
 					)
 					.await?;
 
-					// Wait a bit for the statuses to settle after we've updated the companion
-					delay_for(Duration::from_millis(
-						config.companion_status_settle_delay,
-					))
-					.await;
-
-					// Fetch it again since we've pushed some commits and therefore some status or check might have
-					// failed already
-					let comp_pr = gh_client
-						.pull_request(
-							&comp_pr.base.repo.owner.login,
-							&comp_pr.base.repo.name,
-							comp_pr.number,
-						)
-						.await?;
-
-					// Sanity-check: the PR's new HEAD sha should be the updated SHA we just
-					// pushed
-					if comp_pr.head.sha != updated_sha {
-						return Err(Error::HeadChanged {
-							expected: updated_sha.to_string(),
-							actual: comp_pr.head.sha.to_string(),
-						});
-					}
-
-					// Cleanup the pre-update SHA in order to prevent late status deliveries from
-					// removing the updated SHA from the database
-					cleanup_merge_request(
-						state,
-						&comp.sha,
-						&comp.owner,
-						&comp.repo,
-						comp.number,
-						&MergeRequestCleanupReason::AfterSHAUpdate(
-							&updated_sha,
-						),
-					)
-					.await?;
-
-					(Some(updated_sha), comp_pr)
+				// Sanity-check: the PR's new HEAD sha should be the updated SHA we just
+				// pushed
+				if comp_pr.head.sha != updated_sha {
+					return Err(Error::HeadChanged {
+						expected: updated_sha.to_string(),
+						actual: comp_pr.head.sha.to_string(),
+					});
 				}
+
+				// Cleanup the pre-update SHA in order to prevent late status deliveries from
+				// removing the updated SHA from the database
+				cleanup_merge_request(
+					state,
+					&comp.sha,
+					&comp.owner,
+					&comp.repo,
+					comp.number,
+					&MergeRequestCleanupReason::AfterSHAUpdate(&updated_sha),
+				)
+				.await?;
+
+				(Some(updated_sha), comp_pr)
 			}
+			Some(_) | None => (None, comp_pr),
 		};
 
 		log::info!(

@@ -14,9 +14,10 @@ use crate::{
 	github::*,
 	gitlab::*,
 	merge_request::{
-		check_mergeability, cleanup_merge_request, handle_merged_pull_request,
-		is_ready_to_merge, merge_pull_request, queue_merge_request,
-		MergeRequest, MergeRequestCleanupReason, MergeRequestQueuedMessage,
+		check_all_mergeability, cleanup_merge_request,
+		handle_merged_pull_request, is_ready_to_merge, merge_pull_request,
+		queue_merge_request, MergeRequest, MergeRequestCleanupReason,
+		MergeRequestQueuedMessage,
 	},
 	types::Result,
 	vanity_service,
@@ -398,7 +399,7 @@ pub async fn process_commit_checks_and_statuses(
 			return Ok(());
 		}
 
-		check_mergeability(state, &pr, &mr.requested_by, &[]).await?;
+		check_all_mergeability(state, &pr, &mr.requested_by, &[]).await?;
 
 		if let Some(dependencies) = &mr.dependencies {
 			for dependency in dependencies {
@@ -1173,7 +1174,7 @@ pub async fn handle_command(
 				dependencies: None,
 			};
 
-			check_mergeability(state, pr, requested_by, &[]).await?;
+			check_all_mergeability(state, pr, requested_by, &[]).await?;
 
 			match cmd {
 				MergeCommentCommand::Normal => {
